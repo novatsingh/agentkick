@@ -8,6 +8,7 @@
   },
   "scripts": {
     "check": "node --check bin/agentkick.js",
+    "test": "npm run check",
     "smoke": "node bin/agentkick.js doctor"
   },
   "keywords": [

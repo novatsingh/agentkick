@@ -1,8 +1,21 @@
 # AgentKick
 
-AgentKick creates AI-agent-ready projects for Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Windsurf, and MCP-based workflows.
+Kickstart projects that are ready for Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Windsurf, and MCP-based workflows.
 
 It is not another coding agent. It is the setup layer around coding agents.
+
+```bash
+npx agentkick new
+```
+
+Or run it directly with a template:
+
+```bash
+npx agentkick new chrome-extension maps-lead-finder
+npx agentkick init
+npx agentkick add security
+npx agentkick doctor
+```
 
 ## Why
 
@@ -20,12 +33,22 @@ AgentKick gives every project a strong starting structure:
 
 ## Commands
 
+Interactive project setup:
+
+```bash
+agentkick new
+```
+
+Direct project creation:
+
 ```bash
 agentkick new chrome-extension maps-lead-finder
 agentkick new nextjs my-saas
 agentkick new landing-page launch-site
 agentkick new node-cli my-tool
 ```
+
+Upgrade an existing repo:
 
 ```bash
 cd existing-repo
@@ -51,6 +74,8 @@ agentkick doctor
 - `security`
 - `github`
 
+See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md) for details.
+
 ## Product Positioning
 
 `create-vite` starts a frontend app.
@@ -61,9 +86,16 @@ agentkick doctor
 
 ## MVP Roadmap
 
-- Interactive `agentkick new`
 - More templates: FastAPI, Laravel, Electron, Supabase SaaS
 - MCP config generator with safety presets
 - Template marketplace
 - README/demo generator for GitHub launch
 - Star-growth checklist for open-source maintainers
+
+## Development
+
+```bash
+npm install
+npm test
+node bin/agentkick.js new landing-page demo-site
+```

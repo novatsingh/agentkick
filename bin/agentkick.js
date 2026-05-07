@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import readline from "node:readline/promises";
 
 const VERSION = "0.1.0";
 
@@ -41,7 +42,7 @@ async function main() {
   }
 
   if (command === "new") {
-    createNewProject(args.slice(1));
+    await createNewProject(args.slice(1));
     return;
   }
 
@@ -67,7 +68,7 @@ function printHelp() {
   console.log(`AgentKick ${VERSION}
 
 Usage:
-  agentkick new <template> <project-name>
+  agentkick new [template] [project-name]
   agentkick init
   agentkick add <pack>
   agentkick doctor
@@ -79,6 +80,7 @@ Packs:
   ${SUPPORTED_PACKS.join(", ")}
 
 Examples:
+  agentkick new
   agentkick new chrome-extension maps-lead-finder
   agentkick new landing-page my-launch-site
   cd existing-repo && agentkick init
@@ -86,12 +88,18 @@ Examples:
   agentkick doctor`);
 }
 
-function createNewProject(input) {
-  const template = input[0];
-  const projectName = input[1];
+async function createNewProject(input) {
+  let template = input[0];
+  let projectName = input[1];
 
   if (!template || !projectName) {
-    throw new Error("usage: agentkick new <template> <project-name>");
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error("usage: agentkick new <template> <project-name>");
+    }
+
+    const answers = await promptForNewProject({ template, projectName });
+    template = answers.template;
+    projectName = answers.projectName;
   }
 
   if (!SUPPORTED_TEMPLATES.includes(template)) {
@@ -127,6 +135,55 @@ function createNewProject(input) {
   console.log(`  agentkick doctor`);
 }
 
+async function promptForNewProject(defaults) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  try {
+    console.log("AgentKick project setup");
+    console.log("");
+    SUPPORTED_TEMPLATES.forEach((item, index) => {
+      console.log(`  ${index + 1}. ${item}`);
+    });
+    console.log("");
+
+    const templateAnswer = defaults.template ?? await rl.question("Project type [1]: ");
+    const template = resolveTemplateAnswer(templateAnswer || "1");
+    const nameAnswer = defaults.projectName ?? await rl.question("Project name: ");
+    const projectName = sanitizeProjectName(nameAnswer);
+
+    if (!projectName) {
+      throw new Error("project name is required");
+    }
+
+    return { template, projectName };
+  } finally {
+    rl.close();
+  }
+}
+
+function resolveTemplateAnswer(answer) {
+  const normalized = String(answer).trim();
+  const numeric = Number(normalized);
+  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= SUPPORTED_TEMPLATES.length) {
+    return SUPPORTED_TEMPLATES[numeric - 1];
+  }
+  if (SUPPORTED_TEMPLATES.includes(normalized)) {
+    return normalized;
+  }
+  throw new Error(`unknown template "${answer}". Supported: ${SUPPORTED_TEMPLATES.join(", ")}`);
+}
+
+function sanitizeProjectName(name) {
+  return String(name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function initExistingProject(cwd) {
   const profile = detectProject(cwd);
   writeAgentFiles(cwd, profile);
@@ -146,7 +203,7 @@ function addPack(cwd, input) {
 
   const profile = detectProject(cwd);
   writePack(cwd, pack, profile);
-  updateAgentforgeConfig(cwd, { addedPacks: [pack] });
+  updateAgentkickConfig(cwd, { addedPacks: [pack] });
   console.log(`Added ${pack} pack.`);
 }
 
@@ -421,7 +478,7 @@ function writePack(cwd, pack, profile) {
     writeFile(cwd, ".github/ISSUE_TEMPLATE/bug_report.md", "---\nname: Bug report\nabout: Report a reproducible problem\n---\n\n## Problem\n\n## Steps to reproduce\n\n## Expected behavior\n\n## Logs or screenshots\n");
   }
 
-  updateAgentforgeConfig(cwd, { addedPacks: [pack] });
+  updateAgentkickConfig(cwd, { addedPacks: [pack] });
 }
 
 function agentsMd(profile) {
@@ -592,7 +649,7 @@ ${body}
 `);
 }
 
-function updateAgentforgeConfig(cwd, patch) {
+function updateAgentkickConfig(cwd, patch) {
   const file = path.join(cwd, ".agentkick.json");
   const current = readJsonSafe(file) ?? {};
   const packs = new Set([...(current.packs ?? []), ...(patch.addedPacks ?? [])]);
