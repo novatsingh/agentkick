@@ -8,16 +8,19 @@ import { runDoctor } from "./doctor.js";
 import { buildProfile, defaultPacksForTemplate, detectProject } from "./profile.js";
 import { writePack } from "./packs.js";
 import { writeTemplateProject } from "./templates.js";
+import { setWriteMode } from "./fs-utils.js";
 
 export async function run(args) {
-  const command = args[0] ?? "help";
+  const { commandArgs, options } = parseGlobalOptions(args);
+  setWriteMode({ dryRun: options.dryRun });
+  const command = commandArgs[0] ?? "help";
 
   if (command === "help" || command === "--help" || command === "-h") return printHelp();
   if (command === "version" || command === "--version" || command === "-v") return console.log(VERSION);
-  if (command === "new") return createNewProject(args.slice(1));
-  if (command === "init") return initExistingProject(process.cwd());
-  if (command === "add") return addPack(process.cwd(), args.slice(1));
-  if (command === "doctor") return runDoctor(process.cwd());
+  if (command === "new") return createNewProject(commandArgs.slice(1), options);
+  if (command === "init") return initExistingProject(process.cwd(), options);
+  if (command === "add") return addPack(process.cwd(), commandArgs.slice(1), options);
+  if (command === "doctor") return runDoctor(process.cwd(), parseDoctorOptions(commandArgs.slice(1)));
 
   throw new Error(`unknown command "${command}". Run "agentkick help".`);
 }
@@ -27,9 +30,9 @@ function printHelp() {
 
 Usage:
   agentkick new [template] [project-name]
-  agentkick init
-  agentkick add <pack>
-  agentkick doctor
+  agentkick init [--dry-run]
+  agentkick add <pack> [--dry-run]
+  agentkick doctor [--strict] [--json]
 
 Templates:
   ${SUPPORTED_TEMPLATES.join(", ")}
@@ -44,10 +47,10 @@ Examples:
   agentkick new go-cli my-tool
   cd existing-repo && agentkick init
   agentkick add security
-  agentkick doctor`);
+  agentkick doctor --strict`);
 }
 
-async function createNewProject(input) {
+async function createNewProject(input, options) {
   let template = input[0];
   let projectName = input[1];
 
@@ -72,20 +75,22 @@ async function createNewProject(input) {
   for (const pack of defaultPacksForTemplate(template)) writePack(projectDir, pack, profile);
 
   console.log(`Created ${projectName} using ${template}.`);
+  if (options.dryRun) console.log("Dry run only. No files were written.");
   console.log("Next steps:");
   console.log(`  cd ${projectName}`);
   console.log("  agentkick doctor");
 }
 
-function initExistingProject(cwd) {
+function initExistingProject(cwd, options) {
   const profile = detectProject(cwd);
   writeAgentFiles(cwd, profile);
   writePack(cwd, "core", profile);
   console.log(`Initialized AI-agent setup for ${profile.name}.`);
+  if (options.dryRun) console.log("Dry run only. No files were written.");
   console.log(`Detected stack: ${profile.stack.join(", ") || "generic"}`);
 }
 
-function addPack(cwd, input) {
+function addPack(cwd, input, options) {
   const pack = input[0];
   if (!pack) throw new Error("usage: agentkick add <pack>");
   if (!SUPPORTED_PACKS.includes(pack)) {
@@ -95,6 +100,7 @@ function addPack(cwd, input) {
   const profile = detectProject(cwd);
   writePack(cwd, pack, profile);
   console.log(`Added ${pack} pack.`);
+  if (options.dryRun) console.log("Dry run only. No files were written.");
 }
 
 async function promptForNewProject(defaults) {
@@ -132,4 +138,21 @@ function sanitizeProjectName(name) {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function parseDoctorOptions(input) {
+  return {
+    strict: input.includes("--strict"),
+    json: input.includes("--json")
+  };
+}
+
+function parseGlobalOptions(input) {
+  const options = {
+    dryRun: input.includes("--dry-run")
+  };
+  return {
+    options,
+    commandArgs: input.filter((arg) => arg !== "--dry-run")
+  };
 }

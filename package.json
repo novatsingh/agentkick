@@ -1,14 +1,25 @@
 {
   "name": "agentkick",
   "version": "0.1.0",
-  "description": "Create and maintain AI-agent-ready projects for Codex, Claude Code, Cursor, GitHub Copilot, and MCP.",
+  "description": "Prepare repositories with AI-agent instructions, skills, safety rules, and readiness checks for Codex, Claude Code, Cursor, GitHub Copilot, and MCP.",
   "type": "module",
   "bin": {
     "agentkick": "./bin/agentkick.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "scripts",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
+  ],
   "scripts": {
     "check": "node scripts/check.js",
     "test": "npm run check",
+    "build": "npm test",
     "smoke": "node bin/agentkick.js doctor"
   },
   "keywords": [

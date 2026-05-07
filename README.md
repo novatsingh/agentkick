@@ -1,8 +1,10 @@
 # AgentKick
 
-Kickstart projects that are ready for Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Windsurf, and MCP-based workflows.
+Run AgentKick before AI agents touch your repo.
 
-It is not another coding agent. It is the setup layer around coding agents.
+AgentKick turns repositories into AI-agent-native, production-safe, instruction-driven systems for Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Windsurf, and MCP-based workflows.
+
+It is not another coding agent. It is the operating layer that makes coding agents behave like disciplined senior engineers.
 
 ```bash
 npx agentkick new
@@ -14,21 +16,25 @@ Or run it directly with a template:
 npx agentkick new chrome-extension maps-lead-finder
 npx agentkick init
 npx agentkick add security
-npx agentkick doctor
+npx agentkick doctor --strict
 ```
 
 ## Why
 
-Most people start with Codex or Claude from scratch, then the project becomes messy because the agent has no durable repo instructions, commands, safety rules, or launch checklist.
+Most teams start with Codex or Claude from scratch, then the project becomes messy because the repo has no durable memory, scoped instructions, workflow standards, security boundaries, MCP safety rules, or testing conventions.
 
 AgentKick gives every project a strong starting structure:
 
 - `AGENTS.md` for Codex and other coding agents
 - `CLAUDE.md` for Claude Code memory
 - `.claude/commands` for reusable workflows
+- `.claude/skills` for reusable Claude engineering playbooks
 - `.claude/agents` for specialist agents
+- `.agents/skills` for reusable multi-agent skills
+- `.codex/agents` for Codex specialist agents
 - `.cursor/rules` for Cursor
 - `.github/copilot-instructions.md` for GitHub Copilot
+- `.github/instructions/*` for path-specific Copilot rules
 - `.agentkick.json` for project metadata
 
 ## Commands
@@ -58,6 +64,9 @@ agentkick init
 agentkick add security
 agentkick add netlify
 agentkick doctor
+agentkick doctor --strict
+agentkick doctor --json
+agentkick init --dry-run
 ```
 
 ## Templates
@@ -97,6 +106,8 @@ See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md) fo
 
 `agentkick init` upgrades an existing repo so Codex, Claude, Cursor, and Copilot behave better.
 
+AgentKick is the repo intelligence layer between raw codebases and autonomous coding agents.
+
 ## MVP Roadmap
 
 - More templates: Supabase SaaS, Astro, Django, Rails
@@ -120,6 +131,18 @@ node bin/agentkick.js new landing-page demo-site
 - `src/profile.js`: stack detection and project profile generation.
 - `src/templates.js`: project template writers.
 - `src/packs.js`: command-pack and specialist-agent writers.
-- `src/agent-files.js`: `AGENTS.md`, `CLAUDE.md`, Cursor, and Copilot instruction renderers.
-- `src/doctor.js`: agent-readiness checks.
+- `src/agent-files.js`: `AGENTS.md`, `CLAUDE.md`, skills, agents, Cursor, and Copilot instruction renderers.
+- `src/doctor.js`: scored AI-readiness audit with strict and JSON output.
 - `scripts/check.js`: syntax checks for all JavaScript source files.
+
+## File Safety
+
+AgentKick preserves a `.agentkick-backup` copy before updating an existing file with different content.
+
+Use dry-run mode to preview writes:
+
+```bash
+agentkick init --dry-run
+agentkick add security --dry-run
+agentkick new fastapi demo-api --dry-run
+```

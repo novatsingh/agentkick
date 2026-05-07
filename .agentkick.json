@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "agentkick",
+  "stack": [
+    "node-cli"
+  ],
+  "packageManager": "npm",
+  "testCommand": "npm test",
+  "buildCommand": "npm run build",
+  "launchTarget": "GitHub",
+  "packs": [
+    "core"
+  ],
+  "safety": {
+    "preserveBackups": true,
+    "mcpFilesystemScope": "repo",
+    "destructiveActionsRequireApproval": true
+  }
+}

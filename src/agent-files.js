@@ -4,6 +4,10 @@ export function writeAgentFiles(cwd, profile) {
   writeFile(cwd, "AGENTS.md", agentsMd(profile));
   writeFile(cwd, "CLAUDE.md", claudeMd(profile));
   writeFile(cwd, ".github/copilot-instructions.md", copilotInstructions(profile));
+  writeGithubInstructions(cwd, profile);
+  writeClaudeSkills(cwd, profile);
+  writeGenericSkills(cwd, profile);
+  writeCodexAgents(cwd, profile);
   writeFile(cwd, ".cursor/rules/agentkick.mdc", cursorRules(profile));
   writeFile(cwd, ".agentkick.json", json({
     schemaVersion: 1,
@@ -13,7 +17,12 @@ export function writeAgentFiles(cwd, profile) {
     testCommand: profile.testCommand,
     buildCommand: profile.buildCommand,
     launchTarget: profile.launchTarget,
-    packs: ["core"]
+    packs: ["core"],
+    safety: {
+      preserveBackups: true,
+      mcpFilesystemScope: "repo",
+      destructiveActionsRequireApproval: true
+    }
   }));
 }
 
@@ -29,9 +38,13 @@ This repo includes:
 - \`AGENTS.md\` for Codex and other coding agents
 - \`CLAUDE.md\` for Claude Code
 - \`.claude/commands\` reusable agent workflows
+- \`.claude/skills\` reusable Claude engineering playbooks
 - \`.claude/agents\` specialist agents
+- \`.agents/skills\` multi-agent workflow skills
+- \`.codex/agents\` Codex specialist agent instructions
 - \`.cursor/rules\` for Cursor
 - \`.github/copilot-instructions.md\` for GitHub Copilot
+- \`.github/instructions\` path-specific Copilot instructions
 
 ## Commands
 
@@ -69,6 +82,23 @@ function agentsMd(profile) {
 
 ${profile.name} is a ${profile.stack.join(", ") || "generic"} project prepared with AgentKick.
 
+## Purpose
+
+This repository must be understandable by autonomous coding agents before they modify code.
+
+## Architecture
+
+- Stack: ${profile.stack.join(", ") || "generic"}
+- Package manager: ${profile.packageManager}
+- Launch target: ${profile.launchTarget}
+- Agent metadata: .agentkick.json
+
+## Commands
+
+- Test: ${profile.testCommand}
+- Build: ${profile.buildCommand}
+- Doctor: agentkick doctor
+
 ## Agent Operating Rules
 
 - Understand the current code path before editing.
@@ -77,13 +107,22 @@ ${profile.name} is a ${profile.stack.join(", ") || "generic"} project prepared w
 - Preserve existing user changes and do not revert unrelated work.
 - After code edits, run the narrowest useful verification command.
 - If verification cannot run, state the exact blocker.
+- Never modify generated, vendor, build, or lock files unless the task explicitly requires it.
+- Do not change deployment, auth, billing, permissions, or database schema without calling out migration impact.
+- Treat broad filesystem, shell, and MCP permissions as security risks.
 
-## Commands
+## Forbidden By Default
 
-- Package manager: ${profile.packageManager}
-- Test: ${profile.testCommand}
-- Build: ${profile.buildCommand}
-- Launch target: ${profile.launchTarget}
+- Committing secrets, tokens, private keys, or real credentials.
+- Hiding failing tests or deleting tests to make checks pass.
+- Rewriting large unrelated areas during a focused fix.
+- Adding dependencies without explaining why the existing stack is insufficient.
+
+## Review Expectations
+
+- Findings and risks first.
+- Use file paths and concrete behavior, not vague advice.
+- Prefer reproducible commands over assumptions.
 
 ## Stack Notes
 
@@ -100,7 +139,9 @@ This repository is configured for Claude Code.
 
 - Start by reading \`AGENTS.md\`.
 - Use project commands from \`.claude/commands\` when they match the task.
+- Use playbooks from \`.claude/skills\` for review, debugging, tests, and security scans.
 - Use specialist agents from \`.claude/agents\` for review, security, frontend, deploy, or stack-specific work.
+- Preserve user changes. Do not overwrite files without considering ownership.
 - Keep final answers concise and include verification status.
 
 ## Project Facts
@@ -110,6 +151,13 @@ This repository is configured for Claude Code.
 - Test command: ${profile.testCommand}
 - Build command: ${profile.buildCommand}
 - Launch target: ${profile.launchTarget}
+
+## Required Workflow
+
+1. Inspect the relevant files before editing.
+2. Make the smallest safe change.
+3. Run the narrowest useful verification command.
+4. Report any skipped verification with the exact reason.
 `;
 }
 
@@ -121,7 +169,112 @@ Follow the repository rules in \`AGENTS.md\`.
 - Keep changes small and consistent with the detected stack: ${profile.stack.join(", ") || "generic"}.
 - Prefer existing scripts over new tooling.
 - Do not add dependencies unless the task clearly requires them.
+- Validate external input and avoid leaking secrets.
 - Verify with: ${profile.testCommand}
+`;
+}
+
+function writeGithubInstructions(cwd, profile) {
+  writeFile(cwd, ".github/instructions/frontend.instructions.md", githubInstruction("frontend", "**/*.{tsx,jsx,css,html}", [
+    "Preserve established design patterns unless the task asks for a redesign.",
+    "Keep UI accessible: semantic markup, labels, keyboard interaction, and readable contrast.",
+    "Do not move client-side secrets into frontend files."
+  ]));
+  writeFile(cwd, ".github/instructions/backend.instructions.md", githubInstruction("backend", "**/*.{js,ts,py,php,go,rs}", [
+    "Validate all external input before using it.",
+    "Keep auth, billing, permission, and database changes explicit and reviewable.",
+    `Verify behavior with ${profile.testCommand}.`
+  ]));
+  writeFile(cwd, ".github/instructions/typescript.instructions.md", githubInstruction("typescript", "**/*.{ts,tsx}", [
+    "Avoid any unless the reason is documented at the use site.",
+    "Prefer explicit return types for exported functions.",
+    "Keep server/client boundaries strict."
+  ]));
+  writeFile(cwd, ".github/instructions/security.instructions.md", githubInstruction("security", "**/*", [
+    "Never commit secrets, tokens, private keys, or production credentials.",
+    "Treat broad shell, filesystem, and MCP access as high-risk.",
+    "Do not log sensitive user data."
+  ]));
+}
+
+function writeClaudeSkills(cwd, profile) {
+  const skills = {
+    review: ["Inspect git diff or changed files.", "Check behavior, edge cases, tests, security, and deployment impact.", "Report risks first with file references.", "Avoid broad summaries until findings are complete."],
+    debug: ["Reproduce or identify the failing path.", "Find the smallest root cause.", "Patch only the relevant code path.", `Verify with ${profile.testCommand} or explain why it cannot run.`],
+    "write-tests": ["Identify behavior that can regress.", "Add focused tests before broad refactors.", "Prefer existing test style and helpers.", `Run ${profile.testCommand}.`],
+    "security-scan": ["Trace inputs to sensitive sinks.", "Check secrets, auth, permissions, injection, and MCP/tool access.", "Validate exploitability before assigning severity.", "Recommend concrete remediation."]
+  };
+  for (const [name, steps] of Object.entries(skills)) {
+    writeFile(cwd, `.claude/skills/${name}/SKILL.md`, skillMarkdown(name, steps));
+  }
+}
+
+function writeGenericSkills(cwd, profile) {
+  writeFile(cwd, ".agents/skills/review/SKILL.md", skillMarkdown("review", ["Read AGENTS.md first.", "Review only the scoped change.", "Prioritize bugs, regressions, missing tests, and security risks.", `Use ${profile.testCommand} for verification when possible.`]));
+  writeFile(cwd, ".agents/skills/release/SKILL.md", skillMarkdown("release", ["Run tests and build.", "Check launch checklist and deployment notes.", "Verify secrets are not committed.", "Prepare concise release notes."]));
+}
+
+function writeCodexAgents(cwd, profile) {
+  const agents = {
+    reviewer: "Review diffs for bugs, regressions, missing tests, and security risks. Do not rewrite code.",
+    "test-writer": `Add focused tests using existing conventions. Verify with ${profile.testCommand}.`,
+    "migration-expert": "Review schema, dependency, or framework migrations. Call out rollback and compatibility risks.",
+    "docs-researcher": "Research documentation gaps and update repo docs without changing product behavior.",
+    "performance-optimizer": "Optimize only measured bottlenecks. Preserve behavior and add verification notes."
+  };
+  for (const [name, purpose] of Object.entries(agents)) {
+    writeFile(cwd, `.codex/agents/${name}.md`, codexAgent(name, purpose, profile));
+  }
+}
+
+function githubInstruction(name, applyTo, rules) {
+  return `---
+applyTo: "${applyTo}"
+---
+
+# ${name} instructions
+
+${rules.map((rule) => `- ${rule}`).join("\n")}
+`;
+}
+
+function skillMarkdown(name, steps) {
+  return `---
+description: ${name.replace(/-/g, " ")} workflow for disciplined AI coding agents.
+---
+
+# ${name}
+
+${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}
+`;
+}
+
+function codexAgent(name, purpose, profile) {
+  return `# ${name}
+
+## Purpose
+
+${purpose}
+
+## Scope
+
+- Repository: ${profile.name}
+- Stack: ${profile.stack.join(", ") || "generic"}
+- Verification: ${profile.testCommand}
+
+## Forbidden Actions
+
+- Do not revert unrelated user changes.
+- Do not commit secrets or credentials.
+- Do not perform destructive filesystem or git actions without explicit approval.
+- Do not broaden scope beyond the assigned task.
+
+## Workflow
+
+1. Read AGENTS.md.
+2. Inspect relevant files.
+3. Make or recommend the smallest safe change.
+4. Verify or report the exact verification blocker.
 `;
 }
 

@@ -1,0 +1,14 @@
+---
+description: AgentKick repo rules
+alwaysApply: true
+---
+
+# AgentKick Rules
+
+Read AGENTS.md before making broad edits.
+
+- Stack: node-cli
+- Test command: npm test
+- Build command: npm run build
+- Avoid secrets in source code.
+- Preserve existing style and architecture unless asked to redesign.

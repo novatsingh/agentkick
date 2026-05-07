@@ -7,6 +7,13 @@ agentkick add security
 agentkick add netlify
 ```
 
+AgentKick also generates reusable skills and specialist agents during `new` and `init`:
+
+- `.claude/skills/*`
+- `.agents/skills/*`
+- `.codex/agents/*`
+- `.github/instructions/*`
+
 ## `core`
 
 Adds baseline Claude commands and a code-review specialist agent:
