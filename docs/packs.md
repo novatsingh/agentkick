@@ -51,3 +51,38 @@ Adds GitHub launch basics:
 
 - `.github/workflows/agentkick-check.yml`
 - `.github/ISSUE_TEMPLATE/bug_report.md`
+
+## `python`
+
+Adds Python API review support:
+
+- `/python-api-check`
+- `python-api-engineer`
+
+## `php`
+
+Adds PHP/Laravel review support:
+
+- `/php-laravel-check`
+- `laravel-engineer`
+
+## `go`
+
+Adds Go review support:
+
+- `/go-check`
+- `go-engineer`
+
+## `rust`
+
+Adds Rust review support:
+
+- `/rust-check`
+- `rust-engineer`
+
+## `electron`
+
+Adds Electron desktop review support:
+
+- `/electron-check`
+- `electron-engineer`

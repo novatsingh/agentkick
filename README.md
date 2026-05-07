@@ -44,6 +44,8 @@ Direct project creation:
 ```bash
 agentkick new chrome-extension maps-lead-finder
 agentkick new nextjs my-saas
+agentkick new fastapi my-api
+agentkick new go-cli my-tool
 agentkick new landing-page launch-site
 agentkick new node-cli my-tool
 ```
@@ -64,6 +66,12 @@ agentkick doctor
 - `nextjs`
 - `landing-page`
 - `node-cli`
+- `fastapi`
+- `flask`
+- `laravel`
+- `go-cli`
+- `rust-cli`
+- `electron`
 
 ## Packs
 
@@ -73,6 +81,11 @@ agentkick doctor
 - `netlify`
 - `security`
 - `github`
+- `python`
+- `php`
+- `go`
+- `rust`
+- `electron`
 
 See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md) for details.
 
@@ -86,7 +99,7 @@ See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md) fo
 
 ## MVP Roadmap
 
-- More templates: FastAPI, Laravel, Electron, Supabase SaaS
+- More templates: Supabase SaaS, Astro, Django, Rails
 - MCP config generator with safety presets
 - Template marketplace
 - README/demo generator for GitHub launch

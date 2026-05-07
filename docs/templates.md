@@ -40,3 +40,66 @@ Creates a minimal Node CLI package with:
 - `package.json`
 - `bin/cli.js`
 - GitHub workflow and issue template pack
+
+## `fastapi`
+
+Creates a Python FastAPI service with:
+
+- `pyproject.toml`
+- `app/main.py`
+- pytest health test
+- Dockerfile
+- Python API command pack
+
+## `flask`
+
+Creates a Python Flask service with:
+
+- `pyproject.toml`
+- app factory structure
+- pytest health test
+- Python API command pack
+
+## `laravel`
+
+Creates Laravel-oriented starter metadata with:
+
+- `composer.json`
+- `artisan` placeholder
+- `routes/web.php`
+- feature test scaffold
+- Laravel/PHP command pack
+
+This is intentionally lightweight. Replace the placeholder with a full Laravel install when you want the complete framework tree.
+
+## `go-cli`
+
+Creates a Go CLI starter with:
+
+- `go.mod`
+- `main.go`
+- `main_test.go`
+- Go command pack
+- GitHub workflow pack
+
+## `rust-cli`
+
+Creates a Rust CLI starter with:
+
+- `Cargo.toml`
+- `src/main.rs`
+- unit test
+- Rust command pack
+- GitHub workflow pack
+
+## `electron`
+
+Creates an Electron desktop starter with:
+
+- `package.json`
+- `src/main.js`
+- `src/preload.js`
+- `src/renderer.js`
+- desktop UI files
+- Electron command pack
+- GitHub workflow pack

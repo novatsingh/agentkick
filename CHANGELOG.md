@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Added templates for FastAPI, Flask, Laravel-oriented PHP, Go CLI, Rust CLI, and Electron.
+- Added command packs for Python, PHP/Laravel, Go, Rust, and Electron.
+- Improved project detection and `doctor` output for non-Node projects.
 - Added `agentkick new` for creating AI-agent-ready projects.
 - Added `agentkick init` for upgrading existing repos.
 - Added `agentkick add` for command and specialist-agent packs.

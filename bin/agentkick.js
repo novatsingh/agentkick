@@ -10,7 +10,13 @@ const SUPPORTED_TEMPLATES = [
   "chrome-extension",
   "nextjs",
   "landing-page",
-  "node-cli"
+  "node-cli",
+  "fastapi",
+  "flask",
+  "laravel",
+  "go-cli",
+  "rust-cli",
+  "electron"
 ];
 
 const SUPPORTED_PACKS = [
@@ -19,7 +25,12 @@ const SUPPORTED_PACKS = [
   "nextjs",
   "netlify",
   "security",
-  "github"
+  "github",
+  "python",
+  "php",
+  "go",
+  "rust",
+  "electron"
 ];
 
 const args = process.argv.slice(2);
@@ -116,23 +127,29 @@ async function createNewProject(input) {
   writeAgentFiles(projectDir, profile);
   writePack(projectDir, "core", profile);
 
-  if (template === "chrome-extension") {
-    writePack(projectDir, "chrome-extension", profile);
-  }
-  if (template === "nextjs") {
-    writePack(projectDir, "nextjs", profile);
-  }
-  if (template === "landing-page") {
-    writePack(projectDir, "netlify", profile);
-  }
-  if (template === "node-cli") {
-    writePack(projectDir, "github", profile);
+  for (const pack of defaultPacksForTemplate(template)) {
+    writePack(projectDir, pack, profile);
   }
 
   console.log(`Created ${projectName} using ${template}.`);
   console.log(`Next steps:`);
   console.log(`  cd ${projectName}`);
   console.log(`  agentkick doctor`);
+}
+
+function defaultPacksForTemplate(template) {
+  return {
+    "chrome-extension": ["chrome-extension"],
+    nextjs: ["nextjs"],
+    "landing-page": ["netlify"],
+    "node-cli": ["github"],
+    fastapi: ["python"],
+    flask: ["python"],
+    laravel: ["php"],
+    "go-cli": ["go", "github"],
+    "rust-cli": ["rust", "github"],
+    electron: ["electron", "github"]
+  }[template] ?? [];
 }
 
 async function promptForNewProject(defaults) {
@@ -218,6 +235,7 @@ function runDoctor(cwd) {
 
   const riskyMcp = findRiskyMcp(cwd);
   const packageInfo = readJsonSafe(path.join(cwd, "package.json"));
+  const agentkickConfig = readJsonSafe(path.join(cwd, ".agentkick.json"));
 
   console.log("AgentKick doctor");
   console.log("");
@@ -229,8 +247,10 @@ function runDoctor(cwd) {
   if (packageInfo?.scripts) {
     const scripts = Object.keys(packageInfo.scripts);
     console.log(`PASS package scripts: ${scripts.join(", ") || "none"}`);
+  } else if (agentkickConfig?.testCommand && !agentkickConfig.testCommand.startsWith("document ")) {
+    console.log(`PASS project commands: ${agentkickConfig.testCommand}`);
   } else {
-    console.log("WARN package scripts: no package.json scripts detected");
+    console.log("WARN project commands: no package scripts or documented test command detected");
   }
 
   if (riskyMcp.length > 0) {
@@ -251,17 +271,55 @@ function buildProfile(template, projectName) {
     "chrome-extension": ["chrome-extension", "javascript", "browser"],
     nextjs: ["nextjs", "react", "typescript"],
     "landing-page": ["static-site", "netlify"],
-    "node-cli": ["node-cli", "javascript"]
+    "node-cli": ["node-cli", "javascript"],
+    fastapi: ["fastapi", "python", "api"],
+    flask: ["flask", "python", "api"],
+    laravel: ["laravel", "php", "web"],
+    "go-cli": ["go", "cli"],
+    "rust-cli": ["rust", "cli"],
+    electron: ["electron", "javascript", "desktop"]
+  };
+  const packageManagerByTemplate = {
+    fastapi: "python",
+    flask: "python",
+    laravel: "composer",
+    "go-cli": "go",
+    "rust-cli": "cargo"
+  };
+  const testCommandByTemplate = {
+    "landing-page": "npm run check",
+    fastapi: "python -m pytest",
+    flask: "python -m pytest",
+    laravel: "php artisan test",
+    "go-cli": "go test ./...",
+    "rust-cli": "cargo test"
+  };
+  const buildCommandByTemplate = {
+    "chrome-extension": "npm run package",
+    fastapi: "python -m compileall app tests",
+    flask: "python -m compileall app tests",
+    laravel: "composer install && php artisan test",
+    "go-cli": "go build ./...",
+    "rust-cli": "cargo build"
+  };
+  const launchTargetByTemplate = {
+    "landing-page": "Netlify",
+    fastapi: "Docker or Render",
+    flask: "Docker or Render",
+    laravel: "Laravel hosting",
+    "go-cli": "GitHub Releases",
+    "rust-cli": "GitHub Releases",
+    electron: "GitHub Releases"
   };
 
   return {
     name: projectName,
     template,
     stack: stackByTemplate[template] ?? ["generic"],
-    packageManager: "npm",
-    testCommand: template === "landing-page" ? "npm run check" : "npm test",
-    buildCommand: template === "chrome-extension" ? "npm run package" : "npm run build",
-    launchTarget: template === "landing-page" ? "Netlify" : "GitHub"
+    packageManager: packageManagerByTemplate[template] ?? "npm",
+    testCommand: testCommandByTemplate[template] ?? "npm test",
+    buildCommand: buildCommandByTemplate[template] ?? "npm run build",
+    launchTarget: launchTargetByTemplate[template] ?? "GitHub"
   };
 }
 
@@ -289,22 +347,71 @@ function detectProject(cwd) {
   if (files.has("pyproject.toml") || files.has("requirements.txt")) {
     stack.push("python");
   }
+  if (existsAny(cwd, ["app/main.py"]) && hasText(path.join(cwd, "app/main.py"), "FastAPI")) {
+    stack.push("fastapi");
+  }
+  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path.join(cwd, "app.py"), "Flask")) {
+    stack.push("flask");
+  }
+  if (files.has("composer.json")) {
+    stack.push("php");
+  }
   if (files.has("artisan")) {
     stack.push("laravel");
+  }
+  if (files.has("go.mod")) {
+    stack.push("go");
+  }
+  if (files.has("Cargo.toml")) {
+    stack.push("rust");
+  }
+  if (hasDependency(packageJson, "electron")) {
+    stack.push("electron");
   }
   if (packageJson?.bin) {
     stack.push("node-cli");
   }
 
+  const packageManager = detectPackageManager(cwd, stack);
+
   return {
     name,
     template: stack[0] ?? "generic",
     stack,
-    packageManager: files.has("pnpm-lock.yaml") ? "pnpm" : files.has("yarn.lock") ? "yarn" : "npm",
-    testCommand: packageJson?.scripts?.test ? `${packageManagerCommand(cwd)} test` : "document the test command",
-    buildCommand: packageJson?.scripts?.build ? `${packageManagerCommand(cwd)} run build` : "document the build command",
+    packageManager,
+    testCommand: detectTestCommand(cwd, packageJson, stack),
+    buildCommand: detectBuildCommand(cwd, packageJson, stack),
     launchTarget: stack.includes("netlify") ? "Netlify" : "GitHub"
   };
+}
+
+function detectPackageManager(cwd, stack) {
+  const files = listTopLevelFiles(cwd);
+  if (files.has("pnpm-lock.yaml")) return "pnpm";
+  if (files.has("yarn.lock")) return "yarn";
+  if (stack.includes("laravel") || files.has("composer.json")) return "composer";
+  if (stack.includes("go")) return "go";
+  if (stack.includes("rust")) return "cargo";
+  if (stack.includes("python") || files.has("pyproject.toml") || files.has("requirements.txt")) return "python";
+  return "npm";
+}
+
+function detectTestCommand(cwd, packageJson, stack) {
+  if (packageJson?.scripts?.test) return `${packageManagerCommand(cwd)} test`;
+  if (stack.includes("laravel")) return "php artisan test";
+  if (stack.includes("go")) return "go test ./...";
+  if (stack.includes("rust")) return "cargo test";
+  if (stack.includes("python")) return "python -m pytest";
+  return "document the test command";
+}
+
+function detectBuildCommand(cwd, packageJson, stack) {
+  if (packageJson?.scripts?.build) return `${packageManagerCommand(cwd)} run build`;
+  if (stack.includes("laravel")) return "composer install && php artisan test";
+  if (stack.includes("go")) return "go build ./...";
+  if (stack.includes("rust")) return "cargo build";
+  if (stack.includes("python")) return "python -m compileall .";
+  return "document the build command";
 }
 
 function writeTemplateProject(projectDir, profile) {
@@ -423,8 +530,110 @@ function writeTemplateProject(projectDir, profile) {
     writeFile(projectDir, "bin/cli.js", "#!/usr/bin/env node\nconsole.log('Hello from your AgentKick CLI.');\n");
   }
 
+  if (profile.template === "fastapi") {
+    writeFile(projectDir, "pyproject.toml", `[project]
+name = "${profile.name}"
+version = "0.1.0"
+description = "FastAPI app generated by AgentKick."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]"
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+`);
+    writeFile(projectDir, "app/main.py", "from fastapi import FastAPI\n\napp = FastAPI(title=\"AgentKick FastAPI App\")\n\n\n@app.get(\"/\")\ndef read_root():\n    return {\"status\": \"ok\", \"service\": \"agentkick\"}\n");
+    writeFile(projectDir, "tests/test_health.py", "from fastapi.testclient import TestClient\n\nfrom app.main import app\n\n\ndef test_read_root():\n    client = TestClient(app)\n    response = client.get(\"/\")\n    assert response.status_code == 200\n    assert response.json()[\"status\"] == \"ok\"\n");
+    writeFile(projectDir, "Dockerfile", "FROM python:3.12-slim\nWORKDIR /app\nCOPY pyproject.toml ./\nRUN pip install --no-cache-dir .\nCOPY app ./app\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n");
+  }
+
+  if (profile.template === "flask") {
+    writeFile(projectDir, "pyproject.toml", `[project]
+name = "${profile.name}"
+version = "0.1.0"
+description = "Flask app generated by AgentKick."
+requires-python = ">=3.11"
+dependencies = ["flask"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+`);
+    writeFile(projectDir, "app/__init__.py", "from flask import Flask\n\n\ndef create_app():\n    app = Flask(__name__)\n\n    @app.get(\"/\")\n    def index():\n        return {\"status\": \"ok\", \"service\": \"agentkick\"}\n\n    return app\n");
+    writeFile(projectDir, "wsgi.py", "from app import create_app\n\napp = create_app()\n");
+    writeFile(projectDir, "tests/test_app.py", "from app import create_app\n\n\ndef test_index():\n    app = create_app()\n    client = app.test_client()\n    response = client.get(\"/\")\n    assert response.status_code == 200\n    assert response.json[\"status\"] == \"ok\"\n");
+  }
+
+  if (profile.template === "laravel") {
+    writeFile(projectDir, "composer.json", json({
+      name: `${profile.name}/app`,
+      description: "Laravel app scaffold metadata generated by AgentKick.",
+      type: "project",
+      require: {
+        php: "^8.2",
+        "laravel/framework": "^12.0"
+      },
+      scripts: {
+        test: "php artisan test"
+      }
+    }));
+    writeFile(projectDir, "artisan", "#!/usr/bin/env php\n<?php\n\necho \"Install Laravel dependencies or replace this placeholder with a full Laravel app.\\n\";\n");
+    writeFile(projectDir, "routes/web.php", "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::get('/', function () {\n    return ['status' => 'ok', 'service' => 'agentkick'];\n});\n");
+    writeFile(projectDir, "tests/Feature/HealthTest.php", "<?php\n\ntest('application returns ok', function () {\n    $response = $this->get('/');\n    $response->assertOk();\n});\n");
+  }
+
+  if (profile.template === "go-cli") {
+    writeFile(projectDir, "go.mod", `module ${goModuleName(profile.name)}
+
+go 1.23
+`);
+    writeFile(projectDir, "main.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(message())\n}\n\nfunc message() string {\n\treturn \"Hello from your AgentKick Go CLI.\"\n}\n");
+    writeFile(projectDir, "main_test.go", "package main\n\nimport \"testing\"\n\nfunc TestMessage(t *testing.T) {\n\tif message() == \"\" {\n\t\tt.Fatal(\"message should not be empty\")\n\t}\n}\n");
+  }
+
+  if (profile.template === "rust-cli") {
+    writeFile(projectDir, "Cargo.toml", `[package]
+name = "${profile.name}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+`);
+    writeFile(projectDir, "src/main.rs", "fn main() {\n    println!(\"{}\", message());\n}\n\nfn message() -> &'static str {\n    \"Hello from your AgentKick Rust CLI.\"\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn message_is_not_empty() {\n        assert!(!message().is_empty());\n    }\n}\n");
+  }
+
+  if (profile.template === "electron") {
+    writeFile(projectDir, "package.json", json({
+      name: profile.name,
+      version: "0.1.0",
+      type: "module",
+      main: "src/main.js",
+      scripts: {
+        dev: "electron .",
+        check: "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
+        test: "npm run check",
+        build: "npm run check"
+      },
+      devDependencies: {
+        electron: "latest"
+      }
+    }));
+    writeFile(projectDir, "src/main.js", "import { app, BrowserWindow } from 'electron';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\n\nconst __dirname = path.dirname(fileURLToPath(import.meta.url));\n\nfunction createWindow() {\n  const window = new BrowserWindow({\n    width: 980,\n    height: 680,\n    webPreferences: {\n      preload: path.join(__dirname, 'preload.js')\n    }\n  });\n  window.loadFile(path.join(__dirname, 'index.html'));\n}\n\napp.whenReady().then(createWindow);\napp.on('window-all-closed', () => {\n  if (process.platform !== 'darwin') app.quit();\n});\n");
+    writeFile(projectDir, "src/preload.js", "window.addEventListener('DOMContentLoaded', () => {\n  document.body.dataset.agentkick = 'ready';\n});\n");
+    writeFile(projectDir, "src/renderer.js", "document.querySelector('#status').textContent = 'AgentKick desktop app ready.';\n");
+    writeFile(projectDir, "src/index.html", "<!doctype html>\n<html>\n  <head>\n    <meta charset=\"utf-8\">\n    <title>AgentKick Electron</title>\n    <link rel=\"stylesheet\" href=\"styles.css\">\n  </head>\n  <body>\n    <main>\n      <h1>AgentKick Electron App</h1>\n      <p id=\"status\">Loading...</p>\n    </main>\n    <script type=\"module\" src=\"renderer.js\"></script>\n  </body>\n</html>\n");
+    writeFile(projectDir, "src/styles.css", "body { margin: 0; font-family: Georgia, serif; background: #101820; color: #f8f0df; }\nmain { min-height: 100vh; display: grid; place-content: center; padding: 32px; }\nh1 { font-size: 52px; margin: 0 0 12px; }\n");
+  }
+
   writeFile(projectDir, "README.md", readmeFor(profile));
-  writeFile(projectDir, ".gitignore", "node_modules/\ndist/\n.env\n.env.local\n.DS_Store\n");
+  writeFile(projectDir, ".gitignore", gitignoreFor(profile));
 }
 
 function writeAgentFiles(cwd, profile) {
@@ -471,6 +680,31 @@ function writePack(cwd, pack, profile) {
   if (pack === "security") {
     writeClaudeCommand(cwd, "security-scan", "Perform a practical security review. Focus on secrets, auth bypass, injection, dependency risks, unsafe MCP config, exposed admin surfaces, and user-data handling.");
     writeClaudeAgent(cwd, "security-auditor", "Use this agent for security review and threat modeling.", "You are a security auditor. Validate exploitability before escalating severity. Prefer concrete attack paths and precise remediation.");
+  }
+
+  if (pack === "python") {
+    writeClaudeCommand(cwd, "python-api-check", "Review the Python API for dependency hygiene, route behavior, validation, error handling, test coverage, and production server readiness.");
+    writeClaudeAgent(cwd, "python-api-engineer", "Use this agent for FastAPI, Flask, Python packaging, pytest, and API deployment work.", "You are a Python API engineer. Keep dependencies minimal, prefer pytest for verification, validate request/response behavior, and avoid leaking secrets through logs or config.");
+  }
+
+  if (pack === "php") {
+    writeClaudeCommand(cwd, "php-laravel-check", "Review the PHP/Laravel app for routing, validation, migrations, auth, config caching, queue behavior, and test coverage.");
+    writeClaudeAgent(cwd, "laravel-engineer", "Use this agent for Laravel, Composer, Artisan, routing, migrations, and PHP test workflows.", "You are a Laravel engineer. Preserve framework conventions, avoid editing generated vendor files, check migrations carefully, and verify with php artisan test when available.");
+  }
+
+  if (pack === "go") {
+    writeClaudeCommand(cwd, "go-check", "Review the Go project for package layout, error handling, concurrency risks, CLI behavior, test coverage, and release readiness.");
+    writeClaudeAgent(cwd, "go-engineer", "Use this agent for Go CLI, API, module, testing, and release work.", "You are a Go engineer. Keep APIs small, return explicit errors, prefer table-driven tests, and verify with go test ./... before shipping.");
+  }
+
+  if (pack === "rust") {
+    writeClaudeCommand(cwd, "rust-check", "Review the Rust project for ownership issues, error handling, CLI behavior, unsafe code, tests, and release readiness.");
+    writeClaudeAgent(cwd, "rust-engineer", "Use this agent for Rust CLI, crates, tests, and release work.", "You are a Rust engineer. Avoid unsafe code unless justified, prefer clear Result-based errors, keep dependencies lean, and verify with cargo test.");
+  }
+
+  if (pack === "electron") {
+    writeClaudeCommand(cwd, "electron-check", "Review the Electron app for main/preload/renderer boundaries, context isolation, IPC safety, packaging, auto-update risks, and desktop UX.");
+    writeClaudeAgent(cwd, "electron-engineer", "Use this agent for Electron desktop apps, preload scripts, IPC, renderer UI, and packaging work.", "You are an Electron engineer. Keep Node access out of the renderer, use preload boundaries carefully, avoid broad IPC channels, and verify syntax before packaging.");
   }
 
   if (pack === "github") {
@@ -577,7 +811,25 @@ function stackNotes(profile) {
     notes.push("Docker: avoid changing exposed ports, volumes, or environment contracts without documenting migration impact.");
   }
   if (profile.stack.includes("python")) {
-    notes.push("Python: prefer existing dependency and formatting tools detected in the repo.");
+    notes.push("Python: prefer existing dependency and formatting tools detected in the repo, and verify API behavior with pytest when available.");
+  }
+  if (profile.stack.includes("fastapi")) {
+    notes.push("FastAPI: validate route schemas, status codes, and production server settings before shipping.");
+  }
+  if (profile.stack.includes("flask")) {
+    notes.push("Flask: keep app factory patterns clean and avoid storing secrets in config defaults.");
+  }
+  if (profile.stack.includes("laravel")) {
+    notes.push("Laravel: preserve framework conventions, review migrations carefully, and verify with php artisan test.");
+  }
+  if (profile.stack.includes("go")) {
+    notes.push("Go: prefer explicit errors, table-driven tests, and go test ./... before releases.");
+  }
+  if (profile.stack.includes("rust")) {
+    notes.push("Rust: avoid unsafe code unless justified and verify with cargo test before releases.");
+  }
+  if (profile.stack.includes("electron")) {
+    notes.push("Electron: keep main, preload, and renderer boundaries strict; avoid broad IPC or Node access in renderer code.");
   }
   if (notes.length === 0) {
     notes.push("Generic: document missing commands before assuming test, build, or deploy behavior.");
@@ -707,6 +959,14 @@ function existsAny(cwd, candidates) {
   return candidates.some((candidate) => fs.existsSync(path.join(cwd, candidate)));
 }
 
+function hasText(file, text) {
+  try {
+    return fs.readFileSync(file, "utf8").includes(text);
+  } catch {
+    return false;
+  }
+}
+
 function readJsonSafe(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -736,6 +996,31 @@ function ensureDir(dir) {
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function gitignoreFor(profile) {
+  const common = [".DS_Store", ".env", ".env.local", "dist/", "build/"];
+  const byStack = [];
+  if (profile.stack.some((item) => ["javascript", "typescript", "nextjs", "electron", "node-cli"].includes(item))) {
+    byStack.push("node_modules/", ".next/", "out/");
+  }
+  if (profile.stack.includes("python")) {
+    byStack.push(".venv/", "__pycache__/", "*.pyc", ".pytest_cache/");
+  }
+  if (profile.stack.includes("php") || profile.stack.includes("laravel")) {
+    byStack.push("vendor/", "storage/logs/*.log", ".phpunit.result.cache");
+  }
+  if (profile.stack.includes("go")) {
+    byStack.push("*.test", "coverage.out");
+  }
+  if (profile.stack.includes("rust")) {
+    byStack.push("target/");
+  }
+  return `${[...new Set([...common, ...byStack])].join("\n")}\n`;
+}
+
+function goModuleName(name) {
+  return name.replace(/[^a-zA-Z0-9/_-]/g, "-").replace(/^-+|-+$/g, "") || "agentkick-app";
 }
 
 function titleize(value) {

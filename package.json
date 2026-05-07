@@ -17,7 +17,12 @@
     "cursor",
     "mcp",
     "ai-agents",
-    "developer-tools"
+    "developer-tools",
+    "fastapi",
+    "laravel",
+    "golang",
+    "rust",
+    "electron"
   ],
   "author": "",
   "license": "MIT",
