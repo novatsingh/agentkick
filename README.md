@@ -112,3 +112,14 @@ npm install
 npm test
 node bin/agentkick.js new landing-page demo-site
 ```
+
+## Project Structure
+
+- `bin/agentkick.js`: tiny executable wrapper.
+- `src/cli.js`: command routing and interactive prompts.
+- `src/profile.js`: stack detection and project profile generation.
+- `src/templates.js`: project template writers.
+- `src/packs.js`: command-pack and specialist-agent writers.
+- `src/agent-files.js`: `AGENTS.md`, `CLAUDE.md`, Cursor, and Copilot instruction renderers.
+- `src/doctor.js`: agent-readiness checks.
+- `scripts/check.js`: syntax checks for all JavaScript source files.

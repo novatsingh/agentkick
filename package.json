@@ -7,7 +7,7 @@
     "agentkick": "./bin/agentkick.js"
   },
   "scripts": {
-    "check": "node --check bin/agentkick.js",
+    "check": "node scripts/check.js",
     "test": "npm run check",
     "smoke": "node bin/agentkick.js doctor"
   },

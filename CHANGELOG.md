@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Refactored the CLI from a single large executable into focused `src/` modules for commands, templates, packs, profile detection, generated agent files, and doctor checks.
+- Added a repo-wide JavaScript syntax checker under `scripts/check.js`.
 - Added templates for FastAPI, Flask, Laravel-oriented PHP, Go CLI, Rust CLI, and Electron.
 - Added command packs for Python, PHP/Laravel, Go, Rust, and Electron.
 - Improved project detection and `doctor` output for non-Node projects.
