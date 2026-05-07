@@ -1,0 +1,26 @@
+{
+  "name": "agentkick",
+  "version": "0.1.0",
+  "description": "Create and maintain AI-agent-ready projects for Codex, Claude Code, Cursor, GitHub Copilot, and MCP.",
+  "type": "module",
+  "bin": {
+    "agentkick": "./bin/agentkick.js"
+  },
+  "scripts": {
+    "check": "node --check bin/agentkick.js",
+    "smoke": "node bin/agentkick.js doctor"
+  },
+  "keywords": [
+    "codex",
+    "claude-code",
+    "cursor",
+    "mcp",
+    "ai-agents",
+    "developer-tools"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
