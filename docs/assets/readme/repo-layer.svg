@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
+  <title id="title">AgentKick repo layer</title>
+  <desc id="desc">A diagram showing AgentKick adding agent rules, tool-specific instructions, workflow packs, metadata, and Doctor readiness checks to a repository.</desc>
+  <defs>
+    <style>
+      .title{font-family:Inter,Arial,sans-serif;font-size:30px;font-weight:800;fill:#0f172a}
+      .text{font-family:Inter,Arial,sans-serif;font-size:17px;fill:#334155}
+      .small{font-family:Inter,Arial,sans-serif;font-size:14px;fill:#64748b}
+      .card{fill:#fff;stroke:#cbd5e1;stroke-width:2}
+      .core{fill:#0f172a}
+      .coreText{font-family:Inter,Arial,sans-serif;font-size:26px;font-weight:800;fill:#f8fafc}
+      .line{stroke:#64748b;stroke-width:2}
+    </style>
+  </defs>
+  <rect width="1120" height="520" rx="20" fill="#f8fafc"/>
+  <text class="title" x="58" y="62">What AgentKick adds to your repo</text>
+  <text class="text" x="58" y="94">A small, reviewable workflow layer that every coding agent can read.</text>
+  <rect class="core" x="420" y="190" width="280" height="126" rx="18"/>
+  <text class="coreText" x="488" y="247">AgentKick</text>
+  <text x="462" y="282" font-family="Inter,Arial,sans-serif" font-size="15" fill="#cbd5e1">repo workflow layer</text>
+  <rect class="card" x="68" y="150" width="250" height="92" rx="14"/>
+  <text class="text" x="96" y="188" font-weight="700">AGENTS.md</text>
+  <text class="small" x="96" y="216">agent operating rules</text>
+  <line class="line" x1="318" y1="196" x2="420" y2="238"/>
+  <rect class="card" x="68" y="296" width="250" height="92" rx="14"/>
+  <text class="text" x="96" y="334" font-weight="700">CLAUDE.md</text>
+  <text class="small" x="96" y="362">Claude project memory</text>
+  <line class="line" x1="318" y1="342" x2="420" y2="274"/>
+  <rect class="card" x="802" y="126" width="250" height="92" rx="14"/>
+  <text class="text" x="830" y="164" font-weight="700">.cursor + .github</text>
+  <text class="small" x="830" y="192">tool-specific rules</text>
+  <line class="line" x1="802" y1="172" x2="700" y2="232"/>
+  <rect class="card" x="802" y="254" width="250" height="92" rx="14"/>
+  <text class="text" x="830" y="292" font-weight="700">workflow packs</text>
+  <text class="small" x="830" y="320">skills and commands</text>
+  <line class="line" x1="802" y1="300" x2="700" y2="264"/>
+  <rect class="card" x="802" y="382" width="250" height="72" rx="14"/>
+  <text class="text" x="830" y="424" font-weight="700">doctor</text>
+  <text class="small" x="900" y="424">AI readiness</text>
+  <line class="line" x1="802" y1="418" x2="670" y2="310"/>
+</svg>

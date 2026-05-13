@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="500" viewBox="0 0 1120 500" role="img" aria-labelledby="title desc">
+  <title id="title">Before and after AgentKick</title>
+  <desc id="desc">Comparison of a repo before and after adding AgentKick.</desc>
+  <defs>
+    <style>
+      .heading{font-family:Inter,Arial,sans-serif;font-size:30px;font-weight:800;fill:#0f172a}
+      .panelTitle{font-family:Inter,Arial,sans-serif;font-size:24px;font-weight:800;fill:#0f172a}
+      .item{font-family:Inter,Arial,sans-serif;font-size:18px;fill:#334155}
+      .muted{font-family:Inter,Arial,sans-serif;font-size:14px;fill:#64748b}
+    </style>
+  </defs>
+  <rect width="1120" height="500" rx="20" fill="#f8fafc"/>
+  <text class="heading" x="60" y="62">Before and after AgentKick</text>
+  <rect x="60" y="104" width="480" height="330" rx="18" fill="#fff7ed" stroke="#fed7aa" stroke-width="2"/>
+  <text class="panelTitle" x="100" y="154">Before</text>
+  <text class="item" x="100" y="208">Chat history is project memory</text>
+  <text class="item" x="100" y="252">Agents read generated files</text>
+  <text class="item" x="100" y="296">Task scope is vague</text>
+  <text class="item" x="100" y="340">Verification is guessed</text>
+  <text class="muted" x="100" y="386">Fast start, slow recovery</text>
+  <rect x="580" y="104" width="480" height="330" rx="18" fill="#ecfeff" stroke="#67e8f9" stroke-width="2"/>
+  <text class="panelTitle" x="620" y="154">After</text>
+  <text class="item" x="620" y="208">Agent rules live in files</text>
+  <text class="item" x="620" y="252">Workflow packs are reusable</text>
+  <text class="item" x="620" y="296">Agents share operating rules</text>
+  <text class="item" x="620" y="340">Verification is standardized</text>
+  <text class="muted" x="620" y="386">Fast start, cleaner agent setup</text>
+</svg>

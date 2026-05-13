@@ -1,63 +1,190 @@
 # AgentKick
 
-Run AgentKick before AI agents touch your repo.
+The missing workflow layer for AI-assisted development.
 
-AgentKick turns repositories into AI-agent-native, production-safe, instruction-driven systems for Codex, Claude Code, Cursor, GitHub Copilot, OpenCode, Windsurf, and MCP-based workflows.
+AgentKick makes your repo easier for Codex, Claude Code, Cursor, GitHub Copilot, Windsurf, and future coding agents to understand, follow, and verify.
 
-It is not another coding agent. It is the operating layer that makes coding agents behave like disciplined senior engineers.
+It is not another coding agent. It is a local-first repo layer for agent instructions, reusable workflows, safety rules, and AI workflow readiness.
 
-AgentKick is not semantic search, vector retrieval, embeddings infrastructure, or a code indexing competitor. It is the workflow, memory, and context operating layer for AI-assisted software development.
-
-```bash
-npx agentkick new
-```
-
-Or run it directly with a template:
+![AgentKick terminal demo](docs/assets/readme/agentkick-demo.gif)
 
 ```bash
-npx agentkick new chrome-extension maps-lead-finder
 npx agentkick init
+npx agentkick doctor
 npx agentkick add security
 npx agentkick doctor --strict
 ```
 
-## Why
+## Why AgentKick Exists
 
-Most teams start with Codex or Claude from scratch, then the project becomes messy because the repo has no durable memory, scoped instructions, workflow standards, security boundaries, MCP safety rules, or testing conventions.
+AI coding starts fast, then breaks down when the repo has no durable operating memory.
 
-AgentKick gives every project a strong starting structure:
+Common failure modes:
 
-- `AGENTS.md` for Codex and other coding agents
-- `CLAUDE.md` for Claude Code memory
-- `.claude/commands` for reusable workflows
-- `.claude/skills` for reusable Claude engineering playbooks
-- `.claude/agents` for specialist agents
-- `.agents/skills` for reusable multi-agent skills
-- `.codex/agents` for Codex specialist agents
-- `.cursor/rules` for Cursor
+- every agent needs the same project explanation again
+- giant chats become the only source of task memory
+- generated files and old artifacts waste context
+- agents edit outside the intended scope
+- verification steps are guessed or skipped
+- handoffs vanish after a thread reset
+
+AgentKick fixes the workflow layer around the repo so your existing agents can work with less confusion.
+
+## What AgentKick Adds
+
+![AgentKick repo layer](docs/assets/readme/repo-layer.svg)
+
+AgentKick creates a small, reviewable repo operating layer:
+
+- `AGENTS.md` for coding-agent operating rules
+- `CLAUDE.md` for Claude Code project memory
+- `.cursor/rules/*` for Cursor
 - `.github/copilot-instructions.md` for GitHub Copilot
-- `.github/instructions/*` for path-specific Copilot rules
+- `.codex/agents/*` and `.claude/*` for reusable specialist workflows
 - `.agentkick.json` for project metadata
+- `agentkick doctor` for AI workflow readiness checks
 
-## Documentation
+Everything is plain text. Everything is reviewable in Git.
 
-The architecture specs live under [`docs/`](docs/README.md) so the repo root stays focused on the product and CLI.
+## Current CLI Workflow
 
-- [Architecture](docs/architecture/SYSTEM_ARCHITECTURE.md)
-- [Persistent memory](docs/memory/MEMORY_SYSTEM.md)
-- [Doctor engine](docs/doctor/DOCTOR_ENGINE.md)
-- [Context engine](docs/context-engine/CONTEXT_ENGINE.md)
-- [Roadmap](docs/architecture/ROADMAP.md)
+![AgentKick workflow loop](docs/assets/readme/workflow-loop.svg)
 
-## Commands
+### `agentkick init`
 
-Interactive project setup:
+Prepares an existing repo for AI-assisted development.
 
 ```bash
-agentkick new
+npx agentkick init
 ```
 
-Direct project creation:
+Creates agent files, project metadata, and reusable workflow rules. It should not touch application source files.
+
+### `agentkick add`
+
+Adds stack-specific workflow packs to an existing repo.
+
+```bash
+agentkick add security
+agentkick add github
+agentkick add chrome-extension
+agentkick add netlify
+```
+
+Packs add focused instructions, commands, skills, and review workflows without turning AgentKick into a runtime.
+
+### `agentkick doctor`
+
+Finds workflow risks that make coding agents slower or less reliable.
+
+```bash
+agentkick doctor
+agentkick doctor --strict
+agentkick doctor --json
+```
+
+Example output:
+
+```text
+AgentKick doctor
+
+AI-readiness score: 100/100
+Status: ready
+
+PASS master repo intelligence: AGENTS.md
+PASS Claude memory: CLAUDE.md
+PASS Copilot root instructions: .github/copilot-instructions.md
+PASS Claude security skill: .claude/skills/security-scan/SKILL.md
+PASS Codex reviewer agent: .codex/agents/reviewer.md
+PASS Cursor rules: .cursor/rules/agentkick.mdc
+PASS AgentKick config: .agentkick.json
+```
+
+### `agentkick new`
+
+Creates an agent-ready starter project.
+
+```bash
+agentkick new chrome-extension maps-lead-finder
+agentkick new nextjs my-saas
+agentkick new fastapi my-api
+```
+
+The upcoming v1 workflow layer adds focused task context, summaries, and task splitting. See [Final MVP](docs/final-mvp/FINAL_MVP.md).
+
+## Before And After
+
+![Before and after AgentKick](docs/assets/readme/before-after.svg)
+
+Before AgentKick:
+
+- repo knowledge lives in chat history
+- agents load too much context
+- task scope is vague
+- verification is inconsistent
+
+After AgentKick:
+
+- agent rules live in files
+- workflow packs are reusable
+- agents share the same operating rules
+- verification is easier to standardize
+
+## Works With Your Agent
+
+![Agent compatibility](docs/assets/readme/agent-compatibility.svg)
+
+AgentKick is designed for:
+
+- Codex
+- Claude Code
+- Cursor
+- GitHub Copilot
+- Windsurf
+- MCP-based workflows
+- future autonomous coding agents
+
+AgentKick does not replace those tools. It gives them a better repo operating layer.
+
+## What AgentKick Is Not
+
+AgentKick is not:
+
+- semantic search
+- vector retrieval
+- embeddings infrastructure
+- GraphRAG
+- a code indexing competitor
+- a hosted coding agent
+- a cloud runtime
+
+Sverklo and codegraph-style tools help agents understand repositories.
+
+AgentKick structures AI workflows around repositories.
+
+## Generated Files
+
+Current generated repo layer:
+
+```text
+AGENTS.md
+CLAUDE.md
+.agentkick.json
+.cursor/rules/*
+.github/copilot-instructions.md
+.github/instructions/*
+.codex/agents/*
+.claude/commands/*
+.claude/skills/*
+.claude/agents/*
+.agents/skills/*
+```
+
+The upcoming v1 workflow layer adds `.agentkick/memory/*` and `.agentkick/context/manifest.json`. See [Final MVP](docs/final-mvp/FINAL_MVP.md).
+
+## Templates
+
+AgentKick can also create agent-ready starter projects:
 
 ```bash
 agentkick new chrome-extension maps-lead-finder
@@ -68,20 +195,7 @@ agentkick new landing-page launch-site
 agentkick new node-cli my-tool
 ```
 
-Upgrade an existing repo:
-
-```bash
-cd existing-repo
-agentkick init
-agentkick add security
-agentkick add netlify
-agentkick doctor
-agentkick doctor --strict
-agentkick doctor --json
-agentkick init --dry-run
-```
-
-## Templates
+Supported templates:
 
 - `chrome-extension`
 - `nextjs`
@@ -96,6 +210,17 @@ agentkick init --dry-run
 
 ## Packs
 
+Packs add stack-specific workflow guidance to existing repos:
+
+```bash
+agentkick add security
+agentkick add github
+agentkick add chrome-extension
+agentkick add netlify
+```
+
+Supported packs:
+
 - `core`
 - `chrome-extension`
 - `nextjs`
@@ -108,45 +233,72 @@ agentkick init --dry-run
 - `rust`
 - `electron`
 
-See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md) for details.
+See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md).
 
-## Product Positioning
+## Documentation
 
-`create-vite` starts a frontend app.
+The architecture specs live under [`docs/`](docs/README.md).
 
-`agentkick new` starts an AI-agent-ready project.
+- [System architecture](docs/architecture/SYSTEM_ARCHITECTURE.md)
+- [Persistent memory](docs/memory/MEMORY_SYSTEM.md)
+- [Doctor engine](docs/doctor/DOCTOR_ENGINE.md)
+- [Context engine](docs/context-engine/CONTEXT_ENGINE.md)
+- [Final MVP](docs/final-mvp/FINAL_MVP.md)
 
-`agentkick init` upgrades an existing repo so Codex, Claude, Cursor, and Copilot behave better.
+## Roadmap Snapshot
 
-AgentKick is the repo intelligence layer between raw codebases and autonomous coding agents. See the full [roadmap](docs/architecture/ROADMAP.md) for the platform direction.
+The next v1 implementation pass is locked around:
 
-## Development
+- `agentkick focus` for paste-ready task context
+- `agentkick summarize` for durable task handoffs
+- `agentkick split-task` for breaking broad AI requests into scoped chunks
 
-```bash
-npm install
-npm test
-node bin/agentkick.js new landing-page demo-site
-```
+These are documented in [Final MVP](docs/final-mvp/FINAL_MVP.md) and [CLI Execution Plan](docs/final-mvp/CLI_EXECUTION_PLAN.md).
 
-## Project Structure
+## Local-First Safety
 
-- `bin/agentkick.js`: tiny executable wrapper.
-- `src/cli.js`: command routing and interactive prompts.
-- `src/profile.js`: stack detection and project profile generation.
-- `src/templates.js`: project template writers.
-- `src/packs.js`: command-pack and specialist-agent writers.
-- `src/agent-files.js`: `AGENTS.md`, `CLAUDE.md`, skills, agents, Cursor, and Copilot instruction renderers.
-- `src/doctor.js`: scored AI-readiness audit with strict and JSON output.
-- `scripts/check.js`: syntax checks for all JavaScript source files.
+AgentKick is built to be safe to run in real repos:
 
-## File Safety
+- no account required
+- no repo upload required
+- no source-code auto-refactors from Doctor
+- write plans before risky changes
+- backups before overwrites
+- plain files you can inspect with `git diff`
 
-AgentKick preserves a `.agentkick-backup` copy before updating an existing file with different content.
-
-Use dry-run mode to preview writes:
+Preview writes:
 
 ```bash
 agentkick init --dry-run
 agentkick add security --dry-run
 agentkick new fastapi demo-api --dry-run
 ```
+
+## Development
+
+```bash
+npm install
+npm test
+node bin/agentkick.js doctor
+```
+
+On Windows:
+
+```bash
+npm.cmd test
+```
+
+Project structure:
+
+- `bin/agentkick.js`: executable wrapper
+- `src/cli.js`: command routing
+- `src/profile.js`: stack detection
+- `src/templates.js`: project templates
+- `src/packs.js`: workflow packs
+- `src/agent-files.js`: agent instruction renderers
+- `src/doctor.js`: AI-readiness audit
+- `scripts/check.js`: syntax checks
+
+## License
+
+MIT

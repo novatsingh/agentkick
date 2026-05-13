@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
+  <title id="title">AgentKick workflow loop</title>
+  <desc id="desc">The current AgentKick workflow loop from init to doctor to packs to strict verification.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#475569"/>
+    </marker>
+    <style>
+      .box{fill:#ffffff;stroke:#cbd5e1;stroke-width:2}
+      .label{font-family:Inter,Arial,sans-serif;font-size:22px;font-weight:700;fill:#0f172a}
+      .sub{font-family:Inter,Arial,sans-serif;font-size:14px;fill:#475569}
+      .line{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+      .soft{fill:#ecfeff;stroke:#67e8f9;stroke-width:2}
+    </style>
+  </defs>
+  <rect width="1120" height="420" rx="20" fill="#f8fafc"/>
+  <text x="60" y="62" font-family="Inter,Arial,sans-serif" font-size="30" font-weight="800" fill="#0f172a">Current AgentKick workflow</text>
+  <text x="60" y="92" font-family="Inter,Arial,sans-serif" font-size="16" fill="#475569">Prepare the repo, add focused workflow packs, verify readiness, then let agents work from shared rules.</text>
+  <rect class="box" x="72" y="150" width="150" height="92" rx="12"/>
+  <text class="label" x="120" y="188">init</text>
+  <text class="sub" x="102" y="216">agent files</text>
+  <path class="line" d="M222 196 H310"/>
+  <rect class="box" x="310" y="150" width="150" height="92" rx="12"/>
+  <text class="label" x="352" y="188">doctor</text>
+  <text class="sub" x="344" y="216">readiness</text>
+  <path class="line" d="M460 196 H548"/>
+  <rect class="box" x="548" y="150" width="150" height="92" rx="12"/>
+  <text class="label" x="600" y="188">add</text>
+  <text class="sub" x="586" y="216">packs</text>
+  <path class="line" d="M698 196 H786"/>
+  <rect class="soft" x="786" y="150" width="150" height="92" rx="12"/>
+  <text class="label" x="806" y="188">strict</text>
+  <text class="sub" x="808" y="216">readiness</text>
+  <path class="line" d="M861 242 C861 318 275 318 147 242"/>
+  <rect class="box" x="486" y="286" width="150" height="74" rx="12"/>
+  <text class="label" x="508" y="326">agent</text>
+  <path class="line" d="M786 230 C720 278 662 310 636 318"/>
+  <path class="line" d="M486 318 C380 318 300 276 222 230"/>
+</svg>

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="380" viewBox="0 0 1120 380" role="img" aria-labelledby="title desc">
+  <title id="title">Agent compatibility</title>
+  <desc id="desc">AgentKick connects one repo workflow layer to multiple coding agents.</desc>
+  <defs>
+    <style>
+      .title{font-family:Inter,Arial,sans-serif;font-size:30px;font-weight:800;fill:#0f172a}
+      .text{font-family:Inter,Arial,sans-serif;font-size:17px;fill:#475569}
+      .agent{fill:#ffffff;stroke:#cbd5e1;stroke-width:2}
+      .agentText{font-family:Inter,Arial,sans-serif;font-size:18px;font-weight:700;fill:#0f172a}
+      .line{stroke:#64748b;stroke-width:2}
+    </style>
+  </defs>
+  <rect width="1120" height="380" rx="20" fill="#f8fafc"/>
+  <text class="title" x="60" y="62">One repo layer, every coding agent</text>
+  <text class="text" x="60" y="94">AgentKick does not replace your AI tools. It gives them the same operating context.</text>
+  <rect x="420" y="144" width="280" height="92" rx="18" fill="#0f172a"/>
+  <text x="486" y="186" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="800" fill="#f8fafc">AgentKick</text>
+  <text x="470" y="214" font-family="Inter,Arial,sans-serif" font-size="14" fill="#cbd5e1">repo workflow layer</text>
+  <line class="line" x1="420" y1="190" x2="238" y2="112"/>
+  <line class="line" x1="420" y1="190" x2="238" y2="190"/>
+  <line class="line" x1="420" y1="190" x2="238" y2="268"/>
+  <line class="line" x1="700" y1="190" x2="882" y2="112"/>
+  <line class="line" x1="700" y1="190" x2="882" y2="190"/>
+  <line class="line" x1="700" y1="190" x2="882" y2="268"/>
+  <rect class="agent" x="86" y="80" width="152" height="64" rx="12"/>
+  <text class="agentText" x="137" y="120">Codex</text>
+  <rect class="agent" x="86" y="158" width="152" height="64" rx="12"/>
+  <text class="agentText" x="118" y="198">Claude Code</text>
+  <rect class="agent" x="86" y="236" width="152" height="64" rx="12"/>
+  <text class="agentText" x="133" y="276">Cursor</text>
+  <rect class="agent" x="882" y="80" width="152" height="64" rx="12"/>
+  <text class="agentText" x="918" y="120">Copilot</text>
+  <rect class="agent" x="882" y="158" width="152" height="64" rx="12"/>
+  <text class="agentText" x="913" y="198">Windsurf</text>
+  <rect class="agent" x="882" y="236" width="152" height="64" rx="12"/>
+  <text class="agentText" x="905" y="276">Future agents</text>
+</svg>
