@@ -93,3 +93,10 @@ Adds Electron desktop review support:
 
 - `/electron-check`
 - `electron-engineer`
+
+## `tauri`
+
+Adds Tauri desktop review support:
+
+- `/tauri-check`
+- `tauri-engineer`

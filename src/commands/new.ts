@@ -33,6 +33,8 @@ export function registerNewCommand(program: Command, context: CommandContext) {
 Examples:
   $ agentkick new ai-saas myapp
   $ agentkick new chrome-extension browser-helper
+  $ agentkick new electron-app desktop-studio
+  $ agentkick new tauri-app native-studio
   $ agentkick new marketplace vendorhub
 `
     )

@@ -9,15 +9,20 @@ export function buildProfile(template: Template, projectName: string): ProjectPr
     "ai-saas": ["nextjs", "react", "typescript", "ai-saas", "api-routes"],
     saas: ["nextjs", "react", "typescript", "saas", "api-routes"],
     marketplace: ["nextjs", "react", "typescript", "marketplace", "api-routes"],
-    "internal-tool": ["vite", "react", "typescript", "internal-tool"]
+    "internal-tool": ["vite", "react", "typescript", "internal-tool"],
+    "electron-app": ["electron", "vite", "react", "typescript", "desktop-app"],
+    "tauri-app": ["tauri", "vite", "react", "typescript", "desktop-app", "rust"]
   };
 
   const testCommandByTemplate: Partial<Record<Template, string>> = {
-    "chrome-extension": "npm run check"
+    "chrome-extension": "npm run check",
+    "tauri-app": "npm run typecheck"
   };
 
   const buildCommandByTemplate: Partial<Record<Template, string>> = {
-    "chrome-extension": "npm run package"
+    "chrome-extension": "npm run package",
+    "electron-app": "npm run build",
+    "tauri-app": "npm run build"
   };
 
   return {
@@ -60,7 +65,9 @@ export function defaultPacksForTemplate(template: string): string[] {
       "ai-saas": ["nextjs", "security", "github"],
       saas: ["nextjs", "github"],
       marketplace: ["nextjs", "security", "github"],
-      "internal-tool": ["github"]
+      "internal-tool": ["github"],
+      "electron-app": ["electron", "github"],
+      "tauri-app": ["tauri", "github"]
     }[template] ?? []
   );
 }
@@ -245,10 +252,10 @@ function pickPrimaryStack(candidates: Set<string>) {
     "monorepo-pnpm",
     "chrome-extension",
     "nextjs",
-    "vite",
-    "node-api",
     "electron",
     "tauri",
+    "vite",
+    "node-api",
     "fastapi",
     "flask",
     "laravel",
@@ -397,7 +404,9 @@ function launchTargetFor(template: Template) {
     "ai-saas": "Vercel or Netlify",
     saas: "Vercel or Netlify",
     marketplace: "Vercel or Netlify",
-    "internal-tool": "Vercel, Netlify, or internal hosting"
+    "internal-tool": "Vercel, Netlify, or internal hosting",
+    "electron-app": "Desktop release",
+    "tauri-app": "Desktop release"
   };
   return launchTargets[template] ?? "GitHub";
 }

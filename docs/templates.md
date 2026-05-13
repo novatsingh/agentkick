@@ -87,6 +87,36 @@ Creates a Vite React internal tool starter with:
 agentkick new internal-tool ops-console
 ```
 
+## `electron-app`
+
+Creates an Electron desktop app starter with:
+
+- Electron + React + Vite + TypeScript
+- `src/main`, `src/preload`, and `src/renderer` boundaries
+- context isolation and no direct Node access in renderer code
+- typed preload bridge with a narrow IPC example
+- Electron workflow pack
+
+```bash
+agentkick new electron-app desktop-studio
+```
+
+## `tauri-app`
+
+Creates a Tauri desktop app starter with:
+
+- Tauri + React + Vite + TypeScript
+- `src-tauri`, `src/app`, `src/features`, and `src/core` boundaries
+- narrow Rust command bridge
+- minimal default capability permissions
+- Tauri workflow pack
+
+```bash
+agentkick new tauri-app native-studio
+```
+
+Tauri requires Rust and platform-specific system setup before `npm run dev` or `npm run build`.
+
 ## Interactive Mode
 
 ```bash

@@ -28,6 +28,7 @@ Examples:
   $ agentkick focus auth
   $ agentkick summarize
   $ agentkick new ai-saas myapp
+  $ agentkick new electron-app desktop-studio
 
 Workflow:
   init       write repo memory and agent instructions

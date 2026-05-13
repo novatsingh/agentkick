@@ -422,6 +422,8 @@ function stackNotes(profile: ProjectProfile) {
     notes.push(
       "Electron: keep main, preload, and renderer boundaries strict; avoid broad IPC or Node access in renderer code."
     );
+  if (profile.stack.includes("tauri"))
+    notes.push("Tauri: keep Rust commands narrow, capabilities minimal, and frontend/native bridge behavior explicit.");
   if (notes.length === 0)
     notes.push("Generic: document missing commands before assuming test, build, or deploy behavior.");
   return notes;

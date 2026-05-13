@@ -85,6 +85,7 @@ agentkick add security
 agentkick add github
 agentkick add chrome-extension
 agentkick add netlify
+agentkick add tauri
 ```
 
 Packs add focused instructions, commands, skills, and review workflows without turning AgentKick into a runtime.
@@ -128,6 +129,8 @@ Creates an agent-ready starter project.
 ```bash
 agentkick new chrome-extension browser-helper
 agentkick new ai-saas myapp
+agentkick new electron-app desktop-studio
+agentkick new tauri-app native-studio
 agentkick new marketplace vendorhub
 ```
 
@@ -243,6 +246,17 @@ npm install
 agentkick doctor
 ```
 
+Start a desktop app:
+
+```bash
+agentkick new electron-app desktop-studio
+cd desktop-studio
+npm install
+npm run dev
+```
+
+For a smaller native desktop app, use `agentkick new tauri-app native-studio`. Tauri requires Rust and system setup before `npm run dev` or `npm run build`.
+
 Reset a long agent thread:
 
 ```bash
@@ -261,6 +275,8 @@ agentkick new ai-saas myapp
 agentkick new saas dashboard
 agentkick new marketplace vendorhub
 agentkick new internal-tool ops-console
+agentkick new electron-app desktop-studio
+agentkick new tauri-app native-studio
 ```
 
 Supported templates:
@@ -270,6 +286,8 @@ Supported templates:
 - `saas`
 - `marketplace`
 - `internal-tool`
+- `electron-app`
+- `tauri-app`
 
 Every template includes `AGENTS.md`, `CURRENT_TASK.md`, `ARCHITECTURE.md`, `FEATURE_SUMMARIES.md`, `WORKFLOW_RULES.md`, `DECISIONS.md`, `TASK_HISTORY.md`, a modular app structure, and starter verification commands.
 
@@ -297,6 +315,7 @@ Supported packs:
 - `go`
 - `rust`
 - `electron`
+- `tauri`
 
 See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md).
 

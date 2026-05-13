@@ -46,7 +46,7 @@ AgentKick does not:
 ## The Distinction
 
 ```text
-Sverklo/codegraph-rust understand repositories.
+Repo-understanding tools explain codebases.
 AgentKick structures AI workflows around repositories.
 ```
 

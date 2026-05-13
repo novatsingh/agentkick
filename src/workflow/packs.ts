@@ -131,6 +131,17 @@ const PACKS: Record<Pack, PackWriter> = {
       "You are an Electron engineer. Keep Node access out of the renderer, use preload boundaries carefully, avoid broad IPC channels, and verify syntax before packaging."
     )
   ],
+  tauri: () => [
+    command(
+      "tauri-check",
+      "Review the Tauri app for Rust command boundaries, capability permissions, frontend/native bridge safety, packaging setup, and desktop UX."
+    ),
+    agent(
+      "tauri-engineer",
+      "Use this agent for Tauri desktop apps, Rust commands, capability permissions, frontend integration, and packaging work.",
+      "You are a Tauri engineer. Keep permissions minimal, expose narrow commands, avoid broad filesystem access, and verify both TypeScript and Rust boundaries before packaging."
+    )
+  ],
   github: () => [
     file(
       ".github/workflows/agentkick-check.yml",

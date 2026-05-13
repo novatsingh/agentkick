@@ -57,6 +57,9 @@
     "ai-agents",
     "developer-tools",
     "chrome-extension",
+    "desktop-app",
+    "electron",
+    "tauri",
     "ai-saas",
     "marketplace",
     "workflow"

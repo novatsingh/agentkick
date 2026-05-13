@@ -1,4 +1,11 @@
-export type Template = "chrome-extension" | "ai-saas" | "saas" | "marketplace" | "internal-tool";
+export type Template =
+  | "chrome-extension"
+  | "ai-saas"
+  | "saas"
+  | "marketplace"
+  | "internal-tool"
+  | "electron-app"
+  | "tauri-app";
 
 export type Pack =
   | "core"
@@ -11,7 +18,8 @@ export type Pack =
   | "php"
   | "go"
   | "rust"
-  | "electron";
+  | "electron"
+  | "tauri";
 
 export type PackageJson = {
   name?: string;

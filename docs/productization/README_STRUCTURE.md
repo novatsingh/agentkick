@@ -64,7 +64,7 @@ Not a code index.
 ### 8. Positioning
 
 ```text
-Sverklo/codegraph-rust understand repositories.
+Repo-understanding tools explain codebases.
 AgentKick structures AI workflows around repositories.
 ```
 
