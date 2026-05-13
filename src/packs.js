@@ -54,7 +54,7 @@ const PACKS = {
   ]
 };
 
-export function writePack(cwd, pack, profile) {
+export function writePack(cwd, pack, profile, options = {}) {
   const entries = PACKS[pack]?.(profile);
   if (!entries) throw new Error(`pack writer missing for "${pack}"`);
 
@@ -64,7 +64,7 @@ export function writePack(cwd, pack, profile) {
     if (entry.kind === "file") writeFile(cwd, entry.path, entry.content);
   }
 
-  updateAgentkickConfig(cwd, { addedPacks: [pack] });
+  if (options.updateConfig !== false) updateAgentkickConfig(cwd, { addedPacks: [pack] });
 }
 
 function command(name, body) {

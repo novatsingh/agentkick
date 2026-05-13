@@ -17,7 +17,7 @@ export function writeAgentFiles(cwd, profile) {
     testCommand: profile.testCommand,
     buildCommand: profile.buildCommand,
     launchTarget: profile.launchTarget,
-    packs: ["core"],
+    packs: profile.packs ?? ["core"],
     safety: {
       preserveBackups: true,
       mcpFilesystemScope: "repo",

@@ -68,11 +68,12 @@ async function createNewProject(input, options) {
   const projectDir = path.resolve(process.cwd(), projectName);
   if (fs.existsSync(projectDir)) throw new Error(`target folder already exists: ${projectDir}`);
 
-  const profile = buildProfile(template, projectName);
+  const defaultPacks = defaultPacksForTemplate(template);
+  const profile = { ...buildProfile(template, projectName), packs: ["core", ...defaultPacks] };
   writeTemplateProject(projectDir, profile);
   writeAgentFiles(projectDir, profile);
-  writePack(projectDir, "core", profile);
-  for (const pack of defaultPacksForTemplate(template)) writePack(projectDir, pack, profile);
+  writePack(projectDir, "core", profile, { updateConfig: false });
+  for (const pack of defaultPacks) writePack(projectDir, pack, profile, { updateConfig: false });
 
   console.log(`Created ${projectName} using ${template}.`);
   if (options.dryRun) console.log("Dry run only. No files were written.");
