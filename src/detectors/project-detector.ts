@@ -6,48 +6,25 @@ import type { DetectionDebug, PackageJson, ProjectProfile, Template, WorkspaceHi
 export function buildProfile(template: Template, projectName: string): ProjectProfile {
   const stackByTemplate: Record<Template, string[]> = {
     "chrome-extension": ["chrome-extension", "javascript", "browser"],
-    nextjs: ["nextjs", "react", "typescript"],
-    "landing-page": ["static-site", "netlify"],
-    "node-cli": ["node-cli", "javascript"],
-    fastapi: ["fastapi", "python", "api"],
-    flask: ["flask", "python", "api"],
-    laravel: ["laravel", "php", "web"],
-    "go-cli": ["go", "cli"],
-    "rust-cli": ["rust", "cli"],
-    electron: ["electron", "javascript", "desktop"]
-  };
-
-  const packageManagerByTemplate: Partial<Record<Template, string>> = {
-    fastapi: "python",
-    flask: "python",
-    laravel: "composer",
-    "go-cli": "go",
-    "rust-cli": "cargo"
+    "ai-saas": ["nextjs", "react", "typescript", "ai-saas", "api-routes"],
+    saas: ["nextjs", "react", "typescript", "saas", "api-routes"],
+    marketplace: ["nextjs", "react", "typescript", "marketplace", "api-routes"],
+    "internal-tool": ["vite", "react", "typescript", "internal-tool"]
   };
 
   const testCommandByTemplate: Partial<Record<Template, string>> = {
-    "landing-page": "npm run check",
-    fastapi: "python -m pytest",
-    flask: "python -m pytest",
-    laravel: "php artisan test",
-    "go-cli": "go test ./...",
-    "rust-cli": "cargo test"
+    "chrome-extension": "npm run check"
   };
 
   const buildCommandByTemplate: Partial<Record<Template, string>> = {
-    "chrome-extension": "npm run package",
-    fastapi: "python -m compileall app tests",
-    flask: "python -m compileall app tests",
-    laravel: "composer install && php artisan test",
-    "go-cli": "go build ./...",
-    "rust-cli": "cargo build"
+    "chrome-extension": "npm run package"
   };
 
   return {
     name: projectName,
     template,
     stack: stackByTemplate[template] ?? ["generic"],
-    packageManager: packageManagerByTemplate[template] ?? "npm",
+    packageManager: "npm",
     testCommand: testCommandByTemplate[template] ?? "npm test",
     buildCommand: buildCommandByTemplate[template] ?? "npm run build",
     launchTarget: launchTargetFor(template)
@@ -80,15 +57,10 @@ export function defaultPacksForTemplate(template: string): string[] {
   return (
     {
       "chrome-extension": ["chrome-extension"],
-      nextjs: ["nextjs"],
-      "landing-page": ["netlify"],
-      "node-cli": ["github"],
-      fastapi: ["python"],
-      flask: ["python"],
-      laravel: ["php"],
-      "go-cli": ["go", "github"],
-      "rust-cli": ["rust", "github"],
-      electron: ["electron", "github"]
+      "ai-saas": ["nextjs", "security", "github"],
+      saas: ["nextjs", "github"],
+      marketplace: ["nextjs", "security", "github"],
+      "internal-tool": ["github"]
     }[template] ?? []
   );
 }
@@ -403,13 +375,11 @@ function detectBuildCommand(cwd: string, packageJson: PackageJson | null, stack:
 
 function launchTargetFor(template: Template) {
   const launchTargets: Partial<Record<Template, string>> = {
-    "landing-page": "Netlify",
-    fastapi: "Docker or Render",
-    flask: "Docker or Render",
-    laravel: "Laravel hosting",
-    "go-cli": "GitHub Releases",
-    "rust-cli": "GitHub Releases",
-    electron: "GitHub Releases"
+    "chrome-extension": "Chrome Web Store",
+    "ai-saas": "Vercel or Netlify",
+    saas: "Vercel or Netlify",
+    marketplace: "Vercel or Netlify",
+    "internal-tool": "Vercel, Netlify, or internal hosting"
   };
   return launchTargets[template] ?? "GitHub";
 }

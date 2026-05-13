@@ -1,105 +1,95 @@
 # Templates
 
-AgentKick templates create a working starter project plus AI-agent instruction files.
+AgentKick templates create a working starter project plus AI-agent workflow memory.
+
+Every template includes:
+
+- `AGENTS.md`
+- `CURRENT_TASK.md`
+- `ARCHITECTURE.md`
+- `WORKFLOW_RULES.md`
+- `DECISIONS.md`
+- `TASK_HISTORY.md`
+- `.agentkick.json`
+- agent instructions for Codex, Claude Code, Cursor, and GitHub Copilot
+- modular source folders with feature boundaries
 
 ## `chrome-extension`
 
-Creates a Manifest V3 Chrome extension scaffold with:
+Creates a Manifest V3 Chrome extension with:
 
 - `manifest.json`
-- popup HTML/CSS/JS
-- background service worker
-- package scripts for checking and packaging
-- Chrome-extension-specific Claude command and specialist agent
+- popup, background, content, and shared message modules
+- dependency-free syntax checks
+- a real package script that copies extension files into `dist/`
+- Chrome-extension-specific workflow pack
 
-## `nextjs`
+```bash
+agentkick new chrome-extension browser-helper
+```
 
-Creates a minimal Next.js app-router project with:
+## `ai-saas`
 
-- `app/page.tsx`
-- `app/layout.tsx`
-- `app/globals.css`
-- `next.config.mjs`
-- strict TypeScript config
-- Next.js-specific Claude command and specialist agent
+Creates a Next.js AI SaaS starter with:
 
-## `landing-page`
+- app-router structure
+- workflow API route
+- workflow service boundary
+- memory feature boundary
+- environment helper
+- Next.js, security, and GitHub workflow packs
 
-Creates a static landing page ready for Netlify with:
+```bash
+agentkick new ai-saas myapp
+```
 
-- `index.html`
-- `styles.css`
-- simple local static server
-- `netlify.toml`
-- Netlify launch checklist
+## `saas`
 
-## `node-cli`
+Creates a Next.js SaaS starter with:
 
-Creates a minimal Node CLI package with:
+- account boundary
+- billing boundary
+- workspace boundary
+- health API route
+- Next.js and GitHub workflow packs
 
-- `package.json`
-- `bin/cli.js`
-- GitHub workflow and issue template pack
+```bash
+agentkick new saas dashboard
+```
 
-## `fastapi`
+## `marketplace`
 
-Creates a Python FastAPI service with:
+Creates a Next.js marketplace starter with:
 
-- `pyproject.toml`
-- `app/main.py`
-- pytest health test
-- Dockerfile
-- Python API command pack
+- vendor boundary
+- listing boundary
+- order boundary
+- admin boundary
+- marketplace API route
+- Next.js, security, and GitHub workflow packs
 
-## `flask`
+```bash
+agentkick new marketplace vendorhub
+```
 
-Creates a Python Flask service with:
+## `internal-tool`
 
-- `pyproject.toml`
-- app factory structure
-- pytest health test
-- Python API command pack
+Creates a Vite React internal tool starter with:
 
-## `laravel`
-
-Creates Laravel-oriented starter metadata with:
-
-- `composer.json`
-- `artisan` placeholder
-- `routes/web.php`
-- feature test scaffold
-- Laravel/PHP command pack
-
-This is intentionally lightweight. Replace the placeholder with a full Laravel install when you want the complete framework tree.
-
-## `go-cli`
-
-Creates a Go CLI starter with:
-
-- `go.mod`
-- `main.go`
-- `main_test.go`
-- Go command pack
+- dashboard shell
+- workflow queue feature
+- report boundary
+- API client boundary
 - GitHub workflow pack
 
-## `rust-cli`
+```bash
+agentkick new internal-tool ops-console
+```
 
-Creates a Rust CLI starter with:
+## Interactive Mode
 
-- `Cargo.toml`
-- `src/main.rs`
-- unit test
-- Rust command pack
-- GitHub workflow pack
+```bash
+agentkick new
+```
 
-## `electron`
-
-Creates an Electron desktop starter with:
-
-- `package.json`
-- `src/main.js`
-- `src/preload.js`
-- `src/renderer.js`
-- desktop UI files
-- Electron command pack
-- GitHub workflow pack
+Interactive mode opens a project-type selector and then asks for the project name.

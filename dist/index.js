@@ -6,18 +6,7 @@ import { Command } from "commander";
 
 // src/core/constants.ts
 var VERSION = "0.1.0";
-var SUPPORTED_TEMPLATES = [
-  "chrome-extension",
-  "nextjs",
-  "landing-page",
-  "node-cli",
-  "fastapi",
-  "flask",
-  "laravel",
-  "go-cli",
-  "rust-cli",
-  "electron"
-];
+var SUPPORTED_TEMPLATES = ["chrome-extension", "ai-saas", "saas", "marketplace", "internal-tool"];
 var SUPPORTED_PACKS = [
   "core",
   "chrome-extension",
@@ -98,44 +87,22 @@ function json(value) {
 function buildProfile(template, projectName) {
   const stackByTemplate = {
     "chrome-extension": ["chrome-extension", "javascript", "browser"],
-    nextjs: ["nextjs", "react", "typescript"],
-    "landing-page": ["static-site", "netlify"],
-    "node-cli": ["node-cli", "javascript"],
-    fastapi: ["fastapi", "python", "api"],
-    flask: ["flask", "python", "api"],
-    laravel: ["laravel", "php", "web"],
-    "go-cli": ["go", "cli"],
-    "rust-cli": ["rust", "cli"],
-    electron: ["electron", "javascript", "desktop"]
-  };
-  const packageManagerByTemplate = {
-    fastapi: "python",
-    flask: "python",
-    laravel: "composer",
-    "go-cli": "go",
-    "rust-cli": "cargo"
+    "ai-saas": ["nextjs", "react", "typescript", "ai-saas", "api-routes"],
+    saas: ["nextjs", "react", "typescript", "saas", "api-routes"],
+    marketplace: ["nextjs", "react", "typescript", "marketplace", "api-routes"],
+    "internal-tool": ["vite", "react", "typescript", "internal-tool"]
   };
   const testCommandByTemplate = {
-    "landing-page": "npm run check",
-    fastapi: "python -m pytest",
-    flask: "python -m pytest",
-    laravel: "php artisan test",
-    "go-cli": "go test ./...",
-    "rust-cli": "cargo test"
+    "chrome-extension": "npm run check"
   };
   const buildCommandByTemplate = {
-    "chrome-extension": "npm run package",
-    fastapi: "python -m compileall app tests",
-    flask: "python -m compileall app tests",
-    laravel: "composer install && php artisan test",
-    "go-cli": "go build ./...",
-    "rust-cli": "cargo build"
+    "chrome-extension": "npm run package"
   };
   return {
     name: projectName,
     template,
     stack: stackByTemplate[template] ?? ["generic"],
-    packageManager: packageManagerByTemplate[template] ?? "npm",
+    packageManager: "npm",
     testCommand: testCommandByTemplate[template] ?? "npm test",
     buildCommand: buildCommandByTemplate[template] ?? "npm run build",
     launchTarget: launchTargetFor(template)
@@ -164,15 +131,10 @@ function detectProject(cwd) {
 function defaultPacksForTemplate(template) {
   return {
     "chrome-extension": ["chrome-extension"],
-    nextjs: ["nextjs"],
-    "landing-page": ["netlify"],
-    "node-cli": ["github"],
-    fastapi: ["python"],
-    flask: ["python"],
-    laravel: ["php"],
-    "go-cli": ["go", "github"],
-    "rust-cli": ["rust", "github"],
-    electron: ["electron", "github"]
+    "ai-saas": ["nextjs", "security", "github"],
+    saas: ["nextjs", "github"],
+    marketplace: ["nextjs", "security", "github"],
+    "internal-tool": ["github"]
   }[template] ?? [];
 }
 function packageManagerCommand(cwd) {
@@ -444,13 +406,11 @@ function detectBuildCommand(cwd, packageJson, stack) {
 }
 function launchTargetFor(template) {
   const launchTargets = {
-    "landing-page": "Netlify",
-    fastapi: "Docker or Render",
-    flask: "Docker or Render",
-    laravel: "Laravel hosting",
-    "go-cli": "GitHub Releases",
-    "rust-cli": "GitHub Releases",
-    electron: "GitHub Releases"
+    "chrome-extension": "Chrome Web Store",
+    "ai-saas": "Vercel or Netlify",
+    saas: "Vercel or Netlify",
+    marketplace: "Vercel or Netlify",
+    "internal-tool": "Vercel, Netlify, or internal hosting"
   };
   return launchTargets[template] ?? "GitHub";
 }
@@ -519,8 +479,11 @@ Generated with AgentKick.
 This repo includes:
 
 - \`AGENTS.md\` for Codex and other coding agents
+- \`CURRENT_TASK.md\` for active execution state
+- \`ARCHITECTURE.md\` for repo boundaries and ownership
+- \`WORKFLOW_RULES.md\` for context discipline
+- \`DECISIONS.md\` and \`TASK_HISTORY.md\` for durable project memory
 - \`CLAUDE.md\` for Claude Code
-- \`.claude/commands\` reusable agent workflows
 - \`.claude/skills\` reusable Claude engineering playbooks
 - \`.claude/agents\` specialist agents
 - \`.agents/skills\` multi-agent workflow skills
@@ -1330,126 +1293,761 @@ import path6 from "path";
 import { input, select } from "@inquirer/prompts";
 
 // src/templates/project-templates.ts
+var TEMPLATE_REGISTRY = {
+  "ai-saas": {
+    id: "ai-saas",
+    label: "AI SaaS",
+    description: "Next.js product shell with AI workflow, API, and feature boundaries.",
+    files: aiSaasFiles,
+    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
+  },
+  "chrome-extension": {
+    id: "chrome-extension",
+    label: "Chrome Extension",
+    description: "Manifest V3 extension with popup, background, content, and shared modules.",
+    files: chromeExtensionFiles,
+    nextSteps: ["npm install", "npm run package", "agentkick doctor"]
+  },
+  marketplace: {
+    id: "marketplace",
+    label: "Marketplace",
+    description: "Next.js marketplace starter with vendor, listing, order, and admin boundaries.",
+    files: marketplaceFiles,
+    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
+  },
+  saas: {
+    id: "saas",
+    label: "SaaS",
+    description: "Next.js SaaS starter with account, billing, workspace, and API boundaries.",
+    files: saasFiles,
+    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
+  },
+  "internal-tool": {
+    id: "internal-tool",
+    label: "Internal Tool",
+    description: "Vite React operations tool with dashboard, workflow, and API-client boundaries.",
+    files: internalToolFiles,
+    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
+  }
+};
+function getTemplateDefinition(template) {
+  return TEMPLATE_REGISTRY[template];
+}
+function templateChoices() {
+  return Object.values(TEMPLATE_REGISTRY).map((template) => ({
+    name: template.label,
+    value: template.id,
+    description: template.description
+  }));
+}
 function writeTemplateProject(projectDir, profile) {
-  switch (profile.template) {
-    case "chrome-extension":
-      writeChromeExtension(projectDir, profile);
-      break;
-    case "nextjs":
-      writeNextjs(projectDir, profile);
-      break;
-    case "landing-page":
-      writeLandingPage(projectDir, profile);
-      break;
-    case "node-cli":
-      writeNodeCli(projectDir, profile);
-      break;
-    case "fastapi":
-      writeFastApi(projectDir, profile);
-      break;
-    case "flask":
-      writeFlask(projectDir, profile);
-      break;
-    case "laravel":
-      writeLaravel(projectDir, profile);
-      break;
-    case "go-cli":
-      writeGoCli(projectDir, profile);
-      break;
-    case "rust-cli":
-      writeRustCli(projectDir, profile);
-      break;
-    case "electron":
-      writeElectron(projectDir, profile);
-      break;
-    default:
-      throw new Error(`template writer missing for "${profile.template}"`);
+  const template = getTemplateDefinition(profile.template);
+  if (!template) throw new Error(`template writer missing for "${profile.template}"`);
+  for (const file2 of sharedMemoryFiles(profile, template)) {
+    writeFile(projectDir, file2.path, render(file2.content, variablesFor(profile, template)));
+  }
+  for (const file2 of template.files(profile)) {
+    writeFile(projectDir, file2.path, render(file2.content, variablesFor(profile, template)));
   }
   writeFile(projectDir, "README.md", readmeFor(profile));
   writeFile(projectDir, ".gitignore", gitignoreFor(profile));
 }
-function writeChromeExtension(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "package.json",
-    json({
-      name: profile.name,
-      version: "0.1.0",
-      type: "module",
-      scripts: {
-        check: "node --check src/background.js && node --check src/popup.js",
-        package: "node scripts/package-extension.js",
-        test: "npm run check"
-      },
-      devDependencies: {}
-    })
-  );
-  writeFile(
-    projectDir,
-    "manifest.json",
-    json({
-      manifest_version: 3,
-      name: titleize2(profile.name),
-      version: "0.1.0",
-      description: "Chrome extension scaffold generated by AgentKick.",
-      action: { default_popup: "src/popup.html" },
-      background: { service_worker: "src/background.js", type: "module" },
-      permissions: ["storage"]
-    })
-  );
-  writeFile(
-    projectDir,
-    "src/background.js",
-    "chrome.runtime.onInstalled.addListener(() => {\n  console.log('Extension installed.');\n});\n"
-  );
-  writeFile(
-    projectDir,
-    "src/popup.html",
-    htmlPage(
-      "AgentKick Extension",
-      '<button id="run">Run</button>\n      <p id="status">Ready</p>',
-      '<script type="module" src="popup.js"></script>'
-    )
-  );
-  writeFile(
-    projectDir,
-    "src/popup.css",
-    "body { margin: 0; width: 360px; font-family: Georgia, serif; background: #f5efe2; color: #221b14; }\nmain { padding: 18px; }\nbutton { border: 0; border-radius: 999px; padding: 10px 14px; background: #1f5134; color: white; cursor: pointer; }\n"
-  );
-  writeFile(
-    projectDir,
-    "src/popup.js",
-    "const button = document.querySelector('#run');\nconst status = document.querySelector('#status');\n\nbutton.addEventListener('click', () => {\n  status.textContent = 'Clicked.';\n});\n"
-  );
-  writeFile(
-    projectDir,
-    "scripts/package-extension.js",
-    "import fs from 'node:fs';\nimport path from 'node:path';\n\nconst outDir = path.resolve('dist');\nfs.mkdirSync(outDir, { recursive: true });\nconsole.log('Package step placeholder. Add zip creation before publishing.');\n"
+function postInstallStepsFor(template) {
+  return getTemplateDefinition(template).nextSteps;
+}
+function sharedMemoryFiles(profile, template) {
+  return [
+    {
+      path: "CURRENT_TASK.md",
+      content: `# Current Task
+
+## Status
+
+No active task.
+
+## Active Scope
+
+- Template: {{templateLabel}}
+- Project: {{projectTitle}}
+- Primary stack: ${profile.stack.join(", ")}
+
+## Next Execution
+
+- Run \`${profile.testCommand}\` before handing work back.
+- Keep task notes short and move completed work into \`TASK_HISTORY.md\`.
+- Start each new agent session by reading \`AGENTS.md\`, \`CURRENT_TASK.md\`, and \`ARCHITECTURE.md\`.
+`
+    },
+    {
+      path: "ARCHITECTURE.md",
+      content: `# Architecture
+
+## System Shape
+
+{{projectTitle}} is a {{templateLabel}} project generated for AI-assisted development.
+
+## Boundaries
+
+- \`src/core\`: shared primitives, configuration, and framework-neutral helpers.
+- \`src/features\`: feature modules with local UI, workflow, and service code.
+- \`src/app\` or \`app\`: route and composition layer.
+- \`src/shared\`: small reusable utilities that are stable across features.
+- \`docs\`: product, workflow, and launch notes.
+
+## Agent Rules
+
+- Edit inside one feature boundary when possible.
+- Move reusable behavior to \`src/core\` only after two real call sites exist.
+- Keep route handlers thin and push business behavior into feature modules.
+- Do not add cross-feature imports without documenting the dependency here.
+`
+    },
+    {
+      path: "WORKFLOW_RULES.md",
+      content: `# Workflow Rules
+
+## Context Loading
+
+1. Read \`AGENTS.md\`.
+2. Read \`CURRENT_TASK.md\`.
+3. Read the feature README for the scoped module.
+4. Open only the files required for the task.
+
+## Update Rules
+
+- Update \`CURRENT_TASK.md\` when task scope changes.
+- Add durable decisions to \`DECISIONS.md\`.
+- Add completed task notes to \`TASK_HISTORY.md\`.
+- Keep generated memory concise. Prefer bullets over long prose.
+
+## Execution Discipline
+
+- One task, one feature scope, one verification command.
+- Avoid broad rewrites during focused fixes.
+- Do not mix product, auth, billing, and database changes in the same task unless explicitly requested.
+`
+    },
+    {
+      path: "DECISIONS.md",
+      content: `# Decisions
+
+## Format
+
+- Date:
+- Decision:
+- Context:
+- Consequences:
+`
+    },
+    {
+      path: "TASK_HISTORY.md",
+      content: `# Task History
+
+Record completed work here after it is verified.
+
+## Entries
+
+- No completed tasks yet.
+`
+    },
+    {
+      path: "docs/PROJECT_MAP.md",
+      content: `# Project Map
+
+## Template
+
+- Type: {{templateLabel}}
+- Description: ${template.description}
+
+## First Files To Read
+
+- \`AGENTS.md\`
+- \`CURRENT_TASK.md\`
+- \`ARCHITECTURE.md\`
+- \`WORKFLOW_RULES.md\`
+`
+    }
+  ];
+}
+function chromeExtensionFiles(profile) {
+  return [
+    {
+      path: "package.json",
+      content: json({
+        name: profile.name,
+        version: "0.1.0",
+        type: "module",
+        scripts: {
+          check: "node --check src/background/index.js && node --check src/content/index.js && node --check src/popup/index.js && node --check src/shared/messages.js",
+          package: "node scripts/package-extension.js",
+          test: "npm run check",
+          build: "npm run package"
+        },
+        devDependencies: {}
+      })
+    },
+    {
+      path: "manifest.json",
+      content: json({
+        manifest_version: 3,
+        name: "{{projectTitle}}",
+        version: "0.1.0",
+        description: "AI-native Chrome extension generated by AgentKick.",
+        action: { default_popup: "src/popup/index.html" },
+        background: { service_worker: "src/background/index.js", type: "module" },
+        content_scripts: [{ matches: ["<all_urls>"], js: ["src/content/index.js"], run_at: "document_idle" }],
+        permissions: ["storage"]
+      })
+    },
+    {
+      path: "src/background/index.js",
+      content: `import { MESSAGE_TYPES } from "../shared/messages.js";
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.set({ installedAt: Date.now() });
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== MESSAGE_TYPES.PING) return false;
+  sendResponse({ ok: true, scope: "background" });
+  return true;
+});
+`
+    },
+    {
+      path: "src/content/index.js",
+      content: `const MESSAGE_TYPE = "agentkick:ping";
+
+chrome.runtime.sendMessage({ type: MESSAGE_TYPE, source: "content" }).catch(() => {
+  // The background worker may be unavailable on restricted pages.
+});
+`
+    },
+    {
+      path: "src/shared/messages.js",
+      content: `export const MESSAGE_TYPES = Object.freeze({
+  PING: "agentkick:ping"
+});
+`
+    },
+    {
+      path: "src/popup/index.html",
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="./styles.css">
+    <title>{{projectTitle}}</title>
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <p class="eyebrow">Extension</p>
+        <h1>{{projectTitle}}</h1>
+        <p id="status">Ready</p>
+        <button id="check" type="button">Check worker</button>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
+`
+    },
+    {
+      path: "src/popup/index.js",
+      content: `import { MESSAGE_TYPES } from "../shared/messages.js";
+
+const button = document.querySelector("#check");
+const status = document.querySelector("#status");
+
+button?.addEventListener("click", async () => {
+  status.textContent = "Checking...";
+  try {
+    const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PING, source: "popup" });
+    status.textContent = response?.ok ? "Background worker ready." : "No response.";
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Unable to reach background worker.";
+  }
+});
+`
+    },
+    {
+      path: "src/popup/styles.css",
+      content: `:root {
+  color-scheme: light;
+  --bg: #f7f8fb;
+  --ink: #101827;
+  --muted: #5d6678;
+  --line: #d6deea;
+  --accent: #1f5eff;
+}
+
+body {
+  margin: 0;
+  width: 360px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+main {
+  padding: 16px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+button {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+`
+    },
+    {
+      path: "scripts/package-extension.js",
+      content: `import fs from "node:fs";
+import path from "node:path";
+
+const dist = path.resolve("dist");
+fs.rmSync(dist, { recursive: true, force: true });
+fs.mkdirSync(dist, { recursive: true });
+fs.cpSync("manifest.json", path.join(dist, "manifest.json"));
+fs.cpSync("src", path.join(dist, "src"), { recursive: true });
+console.log("Extension package prepared in dist/");
+`
+    },
+    {
+      path: "src/features/README.md",
+      content: `# Extension Features
+
+Keep feature code grouped by browser surface:
+
+- \`background\`: service worker and durable browser events
+- \`content\`: page interaction layer
+- \`popup\`: user interface
+- \`shared\`: message contracts and stable utilities
+`
+    }
+  ];
+}
+function aiSaasFiles(profile) {
+  return [
+    ...nextPackageFiles(profile, "AI SaaS application generated by AgentKick."),
+    ...nextBaseFiles(
+      "Build the AI workflow layer first.",
+      "Design workflows that agents can understand and users can trust."
+    ),
+    {
+      path: "app/api/workflows/route.ts",
+      content: `import { NextResponse } from "next/server";
+import { listWorkflowRuns } from "@/src/features/workflows/server/workflow-service";
+
+export async function GET() {
+  return NextResponse.json({ workflows: listWorkflowRuns() });
+}
+`
+    },
+    {
+      path: "src/features/workflows/server/workflow-service.ts",
+      content: `export type WorkflowRun = {
+  id: string;
+  name: string;
+  status: "queued" | "running" | "complete";
+};
+
+const runs: WorkflowRun[] = [
+  { id: "demo-onboarding", name: "Onboarding analysis", status: "queued" }
+];
+
+export function listWorkflowRuns() {
+  return runs;
+}
+`
+    },
+    {
+      path: "src/features/workflows/README.md",
+      content: `# Workflows
+
+Owns AI workflow runs, execution state, and task handoff boundaries.
+
+Agents should keep prompt, execution, and result handling separate in this feature.
+`
+    },
+    {
+      path: "src/features/memory/README.md",
+      content: `# Memory
+
+Owns durable project and customer-facing memory. Do not store secrets here.
+
+Use small typed records and summarize long-running state before it enters prompts.
+`
+    },
+    {
+      path: "src/core/env.ts",
+      content: `export function requiredEnv(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(\`Missing required environment variable: \${name}\`);
+  return value;
+}
+`
+    }
+  ];
+}
+function saasFiles(profile) {
+  return [
+    ...nextPackageFiles(profile, "SaaS application generated by AgentKick."),
+    ...nextBaseFiles(
+      "Build the smallest useful customer workspace.",
+      "Keep account, billing, and workspace boundaries explicit."
+    ),
+    {
+      path: "src/features/accounts/README.md",
+      content: `# Accounts
+
+Owns user, organization, and membership behavior.
+
+Do not mix billing or product workflow behavior into this module.
+`
+    },
+    {
+      path: "src/features/billing/README.md",
+      content: `# Billing
+
+Owns plans, subscriptions, invoices, and payment-provider boundaries.
+
+Agents must call out migration impact before changing billing contracts.
+`
+    },
+    {
+      path: "src/features/workspaces/README.md",
+      content: `# Workspaces
+
+Owns the customer workspace shell and scoped project data.
+`
+    },
+    {
+      path: "app/api/health/route.ts",
+      content: `import { NextResponse } from "next/server";
+
+export async function GET() {
+  return NextResponse.json({ ok: true, service: "{{projectName}}" });
+}
+`
+    }
+  ];
+}
+function marketplaceFiles(profile) {
+  return [
+    ...nextPackageFiles(profile, "Marketplace application generated by AgentKick."),
+    ...nextBaseFiles(
+      "Build the marketplace trust loop first.",
+      "Keep vendor, listing, order, and admin modules isolated."
+    ),
+    {
+      path: "src/features/vendors/README.md",
+      content: `# Vendors
+
+Owns seller onboarding, profiles, approval state, and vendor operations.
+`
+    },
+    {
+      path: "src/features/listings/README.md",
+      content: `# Listings
+
+Owns catalog items, availability, pricing display, and listing quality checks.
+`
+    },
+    {
+      path: "src/features/orders/README.md",
+      content: `# Orders
+
+Owns checkout handoff, order lifecycle, fulfillment state, and customer updates.
+`
+    },
+    {
+      path: "src/features/admin/README.md",
+      content: `# Admin
+
+Owns marketplace moderation, trust operations, and support workflows.
+`
+    },
+    {
+      path: "app/api/marketplace/route.ts",
+      content: `import { NextResponse } from "next/server";
+
+export async function GET() {
+  return NextResponse.json({
+    vendors: [],
+    listings: [],
+    orders: []
+  });
+}
+`
+    }
+  ];
+}
+function internalToolFiles(profile) {
+  return [
+    {
+      path: "package.json",
+      content: json({
+        name: profile.name,
+        version: "0.1.0",
+        private: true,
+        type: "module",
+        scripts: { dev: "vite", build: "tsc --noEmit && vite build", preview: "vite preview", test: "npm run build" },
+        dependencies: { "@vitejs/plugin-react": "latest", vite: "latest", react: "latest", "react-dom": "latest" },
+        devDependencies: {
+          typescript: "latest",
+          "@types/node": "latest",
+          "@types/react": "latest",
+          "@types/react-dom": "latest"
+        }
+      })
+    },
+    {
+      path: "index.html",
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{projectTitle}}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>
+`
+    },
+    {
+      path: "src/app/main.tsx",
+      content: `import React from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import "./styles.css";
+
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+`
+    },
+    {
+      path: "src/app/App.tsx",
+      content: `import { WorkflowQueue } from "../features/workflows/WorkflowQueue";
+
+export function App() {
+  return (
+    <main className="shell">
+      <section>
+        <p className="eyebrow">Internal Tool</p>
+        <h1>{{projectTitle}}</h1>
+        <p>Operate repeatable workflows with clear ownership and agent-readable task boundaries.</p>
+      </section>
+      <WorkflowQueue />
+    </main>
   );
 }
-function writeNextjs(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "package.json",
-    json({
-      name: profile.name,
-      version: "0.1.0",
-      private: true,
-      scripts: { dev: "next dev", build: "next build", start: "next start", test: "npm run build" },
-      dependencies: { next: "latest", react: "latest", "react-dom": "latest" },
-      devDependencies: { typescript: "latest", "@types/node": "latest", "@types/react": "latest" }
-    })
+`
+    },
+    {
+      path: "src/app/styles.css",
+      content: `:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --ink: #101827;
+  --muted: #5c6678;
+  --line: #d9e0ea;
+  --accent: #0f766e;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.shell {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0;
+  display: grid;
+  gap: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: clamp(34px, 6vw, 64px);
+  line-height: 1;
+}
+
+.queue {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 20px;
+}
+`
+    },
+    {
+      path: "src/features/workflows/WorkflowQueue.tsx",
+      content: `const tasks = [
+  { id: "ops-review", title: "Review blocked workflows", owner: "operations" },
+  { id: "customer-sync", title: "Sync customer updates", owner: "support" }
+];
+
+export function WorkflowQueue() {
+  return (
+    <section className="queue" aria-label="Workflow queue">
+      <h2>Workflow queue</h2>
+      {tasks.map((task) => (
+        <article key={task.id}>
+          <strong>{task.title}</strong>
+          <p>Owner: {task.owner}</p>
+        </article>
+      ))}
+    </section>
   );
-  writeFile(
-    projectDir,
-    "app/page.tsx",
-    "export default function Home() {\n  return (\n    <main>\n      <h1>AgentKick Next.js App</h1>\n      <p>Start building with agent-ready project instructions.</p>\n    </main>\n  );\n}\n"
-  );
-  writeFile(
-    projectDir,
-    "app/layout.tsx",
-    `import type { ReactNode } from 'react';
-import './globals.css';
+}
+`
+    },
+    {
+      path: "src/core/api-client.ts",
+      content: `export async function apiGet<T>(path: string): Promise<T> {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(\`Request failed: \${response.status}\`);
+  return response.json() as Promise<T>;
+}
+`
+    },
+    {
+      path: "src/features/reports/README.md",
+      content: `# Reports
+
+Owns operational reporting, exports, and dashboard metrics.
+`
+    },
+    {
+      path: "tsconfig.json",
+      content: json({
+        compilerOptions: {
+          target: "ES2020",
+          useDefineForClassFields: true,
+          lib: ["DOM", "DOM.Iterable", "ES2020"],
+          allowJs: false,
+          skipLibCheck: true,
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+          strict: true,
+          forceConsistentCasingInFileNames: true,
+          module: "ESNext",
+          moduleResolution: "Node",
+          resolveJsonModule: true,
+          isolatedModules: true,
+          noEmit: true,
+          jsx: "react-jsx"
+        },
+        include: ["src"],
+        references: []
+      })
+    },
+    {
+      path: "vite.config.ts",
+      content: `import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()]
+});
+`
+    }
+  ];
+}
+function nextPackageFiles(profile, description) {
+  return [
+    {
+      path: "package.json",
+      content: json({
+        name: profile.name,
+        version: "0.1.0",
+        private: true,
+        description,
+        scripts: { dev: "next dev", build: "next build", start: "next start", test: "npm run build" },
+        dependencies: { next: "latest", react: "latest", "react-dom": "latest" },
+        devDependencies: {
+          typescript: "latest",
+          "@types/node": "latest",
+          "@types/react": "latest",
+          "@types/react-dom": "latest"
+        }
+      })
+    },
+    {
+      path: "tsconfig.json",
+      content: json({
+        compilerOptions: {
+          target: "ES2017",
+          lib: ["dom", "dom.iterable", "esnext"],
+          allowJs: false,
+          skipLibCheck: true,
+          strict: true,
+          noEmit: true,
+          esModuleInterop: true,
+          module: "esnext",
+          moduleResolution: "bundler",
+          resolveJsonModule: true,
+          isolatedModules: true,
+          jsx: "preserve",
+          incremental: true,
+          paths: { "@/*": ["./*"] }
+        },
+        include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+        exclude: ["node_modules"]
+      })
+    },
+    { path: "next.config.mjs", content: "const nextConfig = {};\nexport default nextConfig;\n" }
+  ];
+}
+function nextBaseFiles(headline, subheadline) {
+  return [
+    {
+      path: "app/layout.tsx",
+      content: `import type { ReactNode } from "react";
+import "./globals.css";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -1459,295 +2057,102 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   );
 }
 `
-  );
-  writeFile(
-    projectDir,
-    "app/globals.css",
-    "body { margin: 0; font-family: Georgia, serif; background: #f6f0e6; color: #1f1b16; }\nmain { min-height: 100vh; display: grid; place-content: center; padding: 32px; }\n"
-  );
-  writeFile(projectDir, "next.config.mjs", "const nextConfig = {};\nexport default nextConfig;\n");
-  writeFile(
-    projectDir,
-    "tsconfig.json",
-    json({
-      compilerOptions: {
-        target: "ES2017",
-        lib: ["dom", "dom.iterable", "esnext"],
-        allowJs: true,
-        skipLibCheck: true,
-        strict: true,
-        noEmit: true,
-        esModuleInterop: true,
-        module: "esnext",
-        moduleResolution: "bundler",
-        resolveJsonModule: true,
-        isolatedModules: true,
-        jsx: "preserve",
-        incremental: true
-      },
-      include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-      exclude: ["node_modules"]
-    })
-  );
-}
-function writeLandingPage(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "package.json",
-    json({
-      name: profile.name,
-      version: "0.1.0",
-      type: "module",
-      scripts: { dev: "node scripts/serve.js", check: "node --check scripts/serve.js", build: "npm run check" }
-    })
-  );
-  writeFile(
-    projectDir,
-    "index.html",
-    '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1">\n    <title>AgentKick Launch</title>\n    <link rel="stylesheet" href="styles.css">\n  </head>\n  <body>\n    <main class="hero">\n      <p class="eyebrow">Agent-ready from day one</p>\n      <h1>Launch faster with Codex, Claude, Cursor, and GitHub ready.</h1>\n      <p>Create the product, repo instructions, commands, and launch checklist together.</p>\n      <a href="https://github.com/" class="cta">Star on GitHub</a>\n    </main>\n  </body>\n</html>\n'
-  );
-  writeFile(
-    projectDir,
-    "styles.css",
-    ":root { color-scheme: light; --ink: #1d1912; --paper: #f4ead7; --accent: #b7442e; }\nbody { margin: 0; min-height: 100vh; font-family: Georgia, serif; background: radial-gradient(circle at top left, #ffd9a3, transparent 35%), var(--paper); color: var(--ink); }\n.hero { max-width: 880px; padding: 96px 28px; margin: auto; }\n.eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 13px; }\nh1 { font-size: clamp(42px, 8vw, 88px); line-height: .92; margin: 0 0 24px; }\np { font-size: 20px; max-width: 620px; }\n.cta { display: inline-block; margin-top: 18px; padding: 14px 18px; border-radius: 999px; background: var(--accent); color: white; text-decoration: none; }\n"
-  );
-  writeFile(
-    projectDir,
-    "scripts/serve.js",
-    "import http from 'node:http';\nimport fs from 'node:fs';\nimport path from 'node:path';\n\nconst server = http.createServer((request, response) => {\n  const file = request.url === '/styles.css' ? 'styles.css' : 'index.html';\n  const body = fs.readFileSync(path.resolve(file));\n  response.setHeader('content-type', file.endsWith('.css') ? 'text/css' : 'text/html');\n  response.end(body);\n});\n\nserver.listen(3000, () => console.log('http://localhost:3000'));\n"
-  );
-  writeFile(projectDir, "netlify.toml", '[build]\n  publish = "."\n  command = "npm run build"\n');
-}
-function writeNodeCli(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "package.json",
-    json({
-      name: profile.name,
-      version: "0.1.0",
-      type: "module",
-      bin: { [profile.name]: "./bin/cli.js" },
-      scripts: { check: "node --check bin/cli.js", test: "npm run check" }
-    })
-  );
-  writeFile(projectDir, "bin/cli.js", "#!/usr/bin/env node\nconsole.log('Hello from your AgentKick CLI.');\n");
-}
-function writeFastApi(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "pyproject.toml",
-    pythonProject(profile, "FastAPI app generated by AgentKick.", ["fastapi", "uvicorn[standard]"], ["pytest", "httpx"])
-  );
-  writeFile(
-    projectDir,
-    "app/main.py",
-    'from fastapi import FastAPI\n\napp = FastAPI(title="AgentKick FastAPI App")\n\n\n@app.get("/")\ndef read_root():\n    return {"status": "ok", "service": "agentkick"}\n'
-  );
-  writeFile(
-    projectDir,
-    "tests/test_health.py",
-    'from fastapi.testclient import TestClient\n\nfrom app.main import app\n\n\ndef test_read_root():\n    client = TestClient(app)\n    response = client.get("/")\n    assert response.status_code == 200\n    assert response.json()["status"] == "ok"\n'
-  );
-  writeFile(
-    projectDir,
-    "Dockerfile",
-    'FROM python:3.12-slim\nWORKDIR /app\nCOPY pyproject.toml ./\nRUN pip install --no-cache-dir .\nCOPY app ./app\nCMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]\n'
-  );
-}
-function writeFlask(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "pyproject.toml",
-    pythonProject(profile, "Flask app generated by AgentKick.", ["flask"], ["pytest"])
-  );
-  writeFile(
-    projectDir,
-    "app/__init__.py",
-    'from flask import Flask\n\n\ndef create_app():\n    app = Flask(__name__)\n\n    @app.get("/")\n    def index():\n        return {"status": "ok", "service": "agentkick"}\n\n    return app\n'
-  );
-  writeFile(projectDir, "wsgi.py", "from app import create_app\n\napp = create_app()\n");
-  writeFile(
-    projectDir,
-    "tests/test_app.py",
-    'from app import create_app\n\n\ndef test_index():\n    app = create_app()\n    client = app.test_client()\n    response = client.get("/")\n    assert response.status_code == 200\n    assert response.json["status"] == "ok"\n'
-  );
-}
-function writeLaravel(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "composer.json",
-    json({
-      name: `${profile.name}/app`,
-      description: "Laravel app scaffold metadata generated by AgentKick.",
-      type: "project",
-      require: { php: "^8.2", "laravel/framework": "^12.0" },
-      scripts: { test: "php artisan test" }
-    })
-  );
-  writeFile(
-    projectDir,
-    "artisan",
-    '#!/usr/bin/env php\n<?php\n\necho "Install Laravel dependencies or replace this placeholder with a full Laravel app.\\n";\n'
-  );
-  writeFile(
-    projectDir,
-    "routes/web.php",
-    "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::get('/', function () {\n    return ['status' => 'ok', 'service' => 'agentkick'];\n});\n"
-  );
-  writeFile(
-    projectDir,
-    "tests/Feature/HealthTest.php",
-    "<?php\n\ntest('application returns ok', function () {\n    $response = $this->get('/');\n    $response->assertOk();\n});\n"
-  );
-}
-function writeGoCli(projectDir, profile) {
-  writeFile(projectDir, "go.mod", `module ${goModuleName(profile.name)}
-
-go 1.23
-`);
-  writeFile(
-    projectDir,
-    "main.go",
-    'package main\n\nimport "fmt"\n\nfunc main() {\n	fmt.Println(message())\n}\n\nfunc message() string {\n	return "Hello from your AgentKick Go CLI."\n}\n'
-  );
-  writeFile(
-    projectDir,
-    "main_test.go",
-    'package main\n\nimport "testing"\n\nfunc TestMessage(t *testing.T) {\n	if message() == "" {\n		t.Fatal("message should not be empty")\n	}\n}\n'
-  );
-}
-function writeRustCli(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "Cargo.toml",
-    `[package]
-name = "${profile.name}"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-`
-  );
-  writeFile(
-    projectDir,
-    "src/main.rs",
-    `fn main() {
-    println!("{}", message());
-}
-
-fn message() -> &'static str {
-    "Hello from your AgentKick Rust CLI."
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn message_is_not_empty() {
-        assert!(!message().is_empty());
-    }
-}
-`
-  );
-}
-function writeElectron(projectDir, profile) {
-  writeFile(
-    projectDir,
-    "package.json",
-    json({
-      name: profile.name,
-      version: "0.1.0",
-      type: "module",
-      main: "src/main.js",
-      scripts: {
-        dev: "electron .",
-        check: "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
-        test: "npm run check",
-        build: "npm run check"
-      },
-      devDependencies: { electron: "latest" }
-    })
-  );
-  writeFile(
-    projectDir,
-    "src/main.js",
-    "import { app, BrowserWindow } from 'electron';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\n\nconst __dirname = path.dirname(fileURLToPath(import.meta.url));\n\nfunction createWindow() {\n  const window = new BrowserWindow({ width: 980, height: 680, webPreferences: { preload: path.join(__dirname, 'preload.js') } });\n  window.loadFile(path.join(__dirname, 'index.html'));\n}\n\napp.whenReady().then(createWindow);\napp.on('window-all-closed', () => {\n  if (process.platform !== 'darwin') app.quit();\n});\n"
-  );
-  writeFile(
-    projectDir,
-    "src/preload.js",
-    "window.addEventListener('DOMContentLoaded', () => {\n  document.body.dataset.agentkick = 'ready';\n});\n"
-  );
-  writeFile(
-    projectDir,
-    "src/renderer.js",
-    "document.querySelector('#status').textContent = 'AgentKick desktop app ready.';\n"
-  );
-  writeFile(
-    projectDir,
-    "src/index.html",
-    htmlPage(
-      "AgentKick Electron App",
-      '<p id="status">Loading...</p>',
-      '<script type="module" src="renderer.js"></script>'
-    )
-  );
-  writeFile(
-    projectDir,
-    "src/styles.css",
-    "body { margin: 0; font-family: Georgia, serif; background: #101820; color: #f8f0df; }\nmain { min-height: 100vh; display: grid; place-content: center; padding: 32px; }\nh1 { font-size: 52px; margin: 0 0 12px; }\n"
-  );
-}
-function pythonProject(profile, description, dependencies, devDependencies) {
-  return `[project]
-name = "${profile.name}"
-version = "0.1.0"
-description = "${description}"
-requires-python = ">=3.11"
-dependencies = [
-${dependencies.map((item) => `  "${item}"`).join(",\n")}
-]
-
-[project.optional-dependencies]
-dev = [${devDependencies.map((item) => `"${item}"`).join(", ")}]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-`;
-}
-function htmlPage(title, body, script) {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <link rel="stylesheet" href="styles.css">
-  </head>
-  <body>
-    <main>
-      <h1>${title}</h1>
-      ${body}
+    },
+    {
+      path: "app/page.tsx",
+      content: `export default function Home() {
+  return (
+    <main className="shell">
+      <section>
+        <p className="eyebrow">AgentKick Project</p>
+        <h1>${headline}</h1>
+        <p>${subheadline}</p>
+      </section>
     </main>
-    ${script}
-  </body>
-</html>
-`;
+  );
+}
+`
+    },
+    {
+      path: "app/globals.css",
+      content: `:root {
+  color-scheme: light;
+  --bg: #f7f8fb;
+  --ink: #111827;
+  --muted: #5d6678;
+  --accent: #1f5eff;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.shell {
+  min-height: 100vh;
+  width: min(960px, calc(100% - 32px));
+  margin: 0 auto;
+  display: grid;
+  align-content: center;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 760px;
+  margin: 0 0 18px;
+  font-size: clamp(40px, 8vw, 84px);
+  line-height: 0.98;
+}
+
+p {
+  max-width: 680px;
+  font-size: 20px;
+  line-height: 1.6;
+}
+`
+    },
+    {
+      path: "src/core/README.md",
+      content: `# Core
+
+Shared framework-neutral code lives here. Keep this folder small and stable.
+`
+    },
+    {
+      path: "src/shared/README.md",
+      content: `# Shared
+
+Reusable utilities and presentational pieces that do not own product behavior.
+`
+    }
+  ];
 }
 function gitignoreFor(profile) {
-  const common = [".DS_Store", ".env", ".env.local", "dist/", "build/"];
-  const byStack = [];
-  if (profile.stack.some((item) => ["javascript", "typescript", "nextjs", "electron", "node-cli"].includes(item)))
-    byStack.push("node_modules/", ".next/", "out/");
-  if (profile.stack.includes("python")) byStack.push(".venv/", "__pycache__/", "*.pyc", ".pytest_cache/");
-  if (profile.stack.includes("php") || profile.stack.includes("laravel"))
-    byStack.push("vendor/", "storage/logs/*.log", ".phpunit.result.cache");
-  if (profile.stack.includes("go")) byStack.push("*.test", "coverage.out");
-  if (profile.stack.includes("rust")) byStack.push("target/");
-  return `${[.../* @__PURE__ */ new Set([...common, ...byStack])].join("\n")}
+  const common = [".DS_Store", ".env", ".env.local", "dist/", "build/", "*.agentkick-backup"];
+  const stackItems = ["node_modules/"];
+  if (profile.stack.includes("nextjs")) stackItems.push(".next/", "out/");
+  if (profile.stack.includes("vite")) stackItems.push(".vite/");
+  return `${[.../* @__PURE__ */ new Set([...common, ...stackItems])].join("\n")}
 `;
 }
-function goModuleName(name) {
-  return name.replace(/[^a-zA-Z0-9/_-]/g, "-").replace(/^-+|-+$/g, "") || "agentkick-app";
+function variablesFor(profile, template) {
+  return {
+    projectName: profile.name,
+    projectTitle: titleize2(profile.name),
+    template: template.id,
+    templateLabel: template.label
+  };
+}
+function render(content, variables) {
+  return content.replace(/\{\{(\w+)}}/g, (_match, key) => variables[key] ?? "");
 }
 function titleize2(value) {
   return value.split(/[-_\s]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
@@ -1774,15 +2179,16 @@ function registerNewCommand(program, context) {
     logger.success(`Created ${resolvedName} using ${resolvedTemplate}.`);
     console.log("Next steps:");
     console.log(`  cd ${resolvedName}`);
-    console.log("  agentkick doctor");
+    for (const step of postInstallStepsFor(resolvedTemplate)) console.log(`  ${step}`);
   });
 }
 async function resolveTemplate(template) {
-  if (template && isTemplate(template)) return template;
+  const normalized = normalizeTemplate(template);
+  if (normalized && isTemplate(normalized)) return normalized;
   if (template) throw new Error(`unknown template "${template}". Supported: ${SUPPORTED_TEMPLATES.join(", ")}`);
   return select({
-    message: "Project type:",
-    choices: SUPPORTED_TEMPLATES.map((item) => ({ name: item, value: item }))
+    message: "Select project type:",
+    choices: templateChoices()
   });
 }
 function isTemplate(value) {
@@ -1790,6 +2196,9 @@ function isTemplate(value) {
 }
 function sanitizeProjectName(name) {
   return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function normalizeTemplate(value) {
+  return value?.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
 // src/core/config.ts

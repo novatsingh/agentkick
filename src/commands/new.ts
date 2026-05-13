@@ -7,7 +7,7 @@ import type { ProjectProfile, Template } from "../core/types.js";
 import { buildProfile, defaultPacksForTemplate } from "../detectors/project-detector.js";
 import type { CommandContext } from "../core/program.js";
 import { writeAgentFiles } from "../templates/agent-files.js";
-import { writeTemplateProject } from "../templates/project-templates.js";
+import { postInstallStepsFor, templateChoices, writeTemplateProject } from "../templates/project-templates.js";
 import { logger } from "../utils/logger.js";
 import { writePack } from "../workflow/packs.js";
 import { applyWriteMode } from "./shared.js";
@@ -40,17 +40,18 @@ export function registerNewCommand(program: Command, context: CommandContext) {
       logger.success(`Created ${resolvedName} using ${resolvedTemplate}.`);
       console.log("Next steps:");
       console.log(`  cd ${resolvedName}`);
-      console.log("  agentkick doctor");
+      for (const step of postInstallStepsFor(resolvedTemplate)) console.log(`  ${step}`);
     });
 }
 
 async function resolveTemplate(template?: string): Promise<Template> {
-  if (template && isTemplate(template)) return template;
+  const normalized = normalizeTemplate(template);
+  if (normalized && isTemplate(normalized)) return normalized;
   if (template) throw new Error(`unknown template "${template}". Supported: ${SUPPORTED_TEMPLATES.join(", ")}`);
 
   return select({
-    message: "Project type:",
-    choices: SUPPORTED_TEMPLATES.map((item) => ({ name: item, value: item }))
+    message: "Select project type:",
+    choices: templateChoices()
   });
 }
 
@@ -64,4 +65,8 @@ function sanitizeProjectName(name: string) {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function normalizeTemplate(value?: string) {
+  return value?.trim().toLowerCase().replace(/\s+/g, "-");
 }

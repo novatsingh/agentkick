@@ -56,11 +56,10 @@
     "mcp",
     "ai-agents",
     "developer-tools",
-    "fastapi",
-    "laravel",
-    "golang",
-    "rust",
-    "electron"
+    "chrome-extension",
+    "ai-saas",
+    "marketplace",
+    "workflow"
   ],
   "author": "",
   "license": "MIT",

@@ -1,14 +1,4 @@
-export type Template =
-  | "chrome-extension"
-  | "nextjs"
-  | "landing-page"
-  | "node-cli"
-  | "fastapi"
-  | "flask"
-  | "laravel"
-  | "go-cli"
-  | "rust-cli"
-  | "electron";
+export type Template = "chrome-extension" | "ai-saas" | "saas" | "marketplace" | "internal-tool";
 
 export type Pack =
   | "core"

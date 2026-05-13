@@ -41,8 +41,11 @@ Generated with AgentKick.
 This repo includes:
 
 - \`AGENTS.md\` for Codex and other coding agents
+- \`CURRENT_TASK.md\` for active execution state
+- \`ARCHITECTURE.md\` for repo boundaries and ownership
+- \`WORKFLOW_RULES.md\` for context discipline
+- \`DECISIONS.md\` and \`TASK_HISTORY.md\` for durable project memory
 - \`CLAUDE.md\` for Claude Code
-- \`.claude/commands\` reusable agent workflows
 - \`.claude/skills\` reusable Claude engineering playbooks
 - \`.claude/agents\` specialist agents
 - \`.agents/skills\` multi-agent workflow skills

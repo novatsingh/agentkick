@@ -111,8 +111,8 @@ Creates an agent-ready starter project.
 
 ```bash
 agentkick new chrome-extension browser-helper
-agentkick new nextjs my-saas
-agentkick new fastapi my-api
+agentkick new ai-saas myapp
+agentkick new marketplace vendorhub
 ```
 
 The upcoming v1 workflow layer adds focused task context, summaries, and task splitting. See [Final MVP](docs/final-mvp/FINAL_MVP.md).
@@ -191,25 +191,21 @@ AgentKick can also create agent-ready starter projects:
 
 ```bash
 agentkick new chrome-extension browser-helper
-agentkick new nextjs my-saas
-agentkick new fastapi my-api
-agentkick new go-cli my-tool
-agentkick new landing-page launch-site
-agentkick new node-cli my-tool
+agentkick new ai-saas myapp
+agentkick new saas dashboard
+agentkick new marketplace vendorhub
+agentkick new internal-tool ops-console
 ```
 
 Supported templates:
 
 - `chrome-extension`
-- `nextjs`
-- `landing-page`
-- `node-cli`
-- `fastapi`
-- `flask`
-- `laravel`
-- `go-cli`
-- `rust-cli`
-- `electron`
+- `ai-saas`
+- `saas`
+- `marketplace`
+- `internal-tool`
+
+Every template includes `AGENTS.md`, `CURRENT_TASK.md`, `ARCHITECTURE.md`, `WORKFLOW_RULES.md`, `DECISIONS.md`, `TASK_HISTORY.md`, a modular app structure, and starter verification commands.
 
 ## Packs
 
@@ -274,7 +270,7 @@ Preview writes:
 ```bash
 agentkick init --dry-run
 agentkick add security --dry-run
-agentkick new fastapi demo-api --dry-run
+agentkick new ai-saas demo-app --dry-run
 ```
 
 ## Development
@@ -282,7 +278,8 @@ agentkick new fastapi demo-api --dry-run
 ```bash
 npm install
 npm test
-node bin/agentkick.js doctor
+npm run build
+node dist/index.js doctor
 ```
 
 On Windows:
@@ -293,14 +290,13 @@ npm.cmd test
 
 Project structure:
 
-- `bin/agentkick.js`: executable wrapper
-- `src/cli.js`: command routing
-- `src/profile.js`: stack detection
-- `src/templates.js`: project templates
-- `src/packs.js`: workflow packs
-- `src/agent-files.js`: agent instruction renderers
-- `src/doctor.js`: AI-readiness audit
-- `scripts/check.js`: syntax checks
+- `src/core`: CLI program, config, and shared types
+- `src/commands`: command registry and command handlers
+- `src/detectors`: stack and capability detection
+- `src/templates`: project templates and agent instruction renderers
+- `src/workflow`: workflow packs
+- `src/doctor`: AI-readiness audit
+- `src/utils`: filesystem, logging, git, and formatting helpers
 
 ## License
 
