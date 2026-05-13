@@ -158,9 +158,7 @@ AgentKick is not:
 - a hosted coding agent
 - a cloud runtime
 
-Sverklo and codegraph-style tools help agents understand repositories.
-
-AgentKick structures AI workflows around repositories.
+AgentKick focuses on workflow structure, repo memory, and operating rules for AI-assisted development.
 
 ## Generated Files
 
