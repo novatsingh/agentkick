@@ -9,11 +9,14 @@ It is not another coding agent. It is a local-first repo layer for agent instruc
 ![AgentKick terminal demo](docs/assets/readme/agentkick-demo.gif)
 
 ```bash
-npx agentkick init
-npx agentkick doctor
-npx agentkick add security
-npx agentkick doctor --strict
+npm install -g github:novatsingh/agentkick
+agentkick init
+agentkick doctor
+agentkick focus
+agentkick summarize
 ```
+
+> npm package publishing is not live yet. Until the first npm release, install from GitHub instead of `npx agentkick`.
 
 ## Why AgentKick Exists
 
@@ -55,7 +58,7 @@ Everything is plain text. Everything is reviewable in Git.
 Prepares an existing repo for AI-assisted development.
 
 ```bash
-npx agentkick init
+agentkick init
 ```
 
 Creates agent files, project metadata, and reusable workflow rules. It should not touch application source files.

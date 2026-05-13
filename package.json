@@ -25,7 +25,7 @@
     "format": "prettier --write package.json tsconfig.json eslint.config.js tsup.config.mjs \"src/**/*.ts\"",
     "format:check": "prettier --check package.json tsconfig.json eslint.config.js tsup.config.mjs \"src/**/*.ts\"",
     "lint": "eslint .",
-    "prepack": "npm run build",
+    "prepare": "npm run build",
     "smoke": "node dist/index.js --help && node dist/index.js doctor --json",
     "test": "npm run check",
     "typecheck": "tsc --noEmit"
