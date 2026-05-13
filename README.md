@@ -18,6 +18,8 @@ agentkick summarize
 
 > npm package publishing is not live yet. Until the first npm release, install from the GitHub tarball instead of `npx agentkick`.
 
+Requires Node.js 16 or newer.
+
 ## Why AgentKick Exists
 
 AI coding starts fast, then breaks down when the repo has no durable operating memory.

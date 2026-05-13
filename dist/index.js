@@ -531,7 +531,7 @@ function buildProfile(template, projectName) {
 }
 function detectProject(cwd) {
   const packageJson = readJsonSafe(path2.join(cwd, "package.json"));
-  const name = packageJson?.name ?? path2.basename(cwd);
+  const name = (packageJson == null ? void 0 : packageJson.name) ?? path2.basename(cwd);
   const detection = analyzeProject(cwd, packageJson);
   const primaryStack = detection.primaryStack;
   const capabilities = detection.capabilities;
@@ -579,7 +579,7 @@ function hasAnyDependency(packageJson, dependencies) {
 }
 function packageDependencies(packageJson) {
   const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
-  const entries = sections.flatMap((section) => Object.keys(packageJson?.[section] ?? {}));
+  const entries = sections.flatMap((section) => Object.keys((packageJson == null ? void 0 : packageJson[section]) ?? {}));
   return new Set(entries);
 }
 function analyzeProject(cwd, packageJson) {
@@ -635,7 +635,10 @@ function analyzeProject(cwd, packageJson) {
   const manifestFiles = ["manifest.json", "public/manifest.json", "src/manifest.json"].filter(
     (file2) => checkPath(file2)
   );
-  const chromeManifest = manifestFiles.find((file2) => readJsonSafe(path2.join(cwd, file2))?.manifest_version);
+  const chromeManifest = manifestFiles.find((file2) => {
+    var _a;
+    return (_a = readJsonSafe(path2.join(cwd, file2))) == null ? void 0 : _a.manifest_version;
+  });
   if (chromeManifest) {
     addConfig(chromeManifest);
     addPrimary("chrome-extension", `${chromeManifest} contains manifest_version`);
@@ -679,7 +682,7 @@ function analyzeProject(cwd, packageJson) {
   if (files.has("go.mod")) addPrimary("go", "go.mod exists");
   if (files.has("Cargo.toml")) addPrimary("rust", "Cargo.toml exists");
   if (hasDependency(packageJson, "electron")) addPrimary("electron", "package.json depends on electron");
-  if (packageJson?.bin) addPrimary("node-cli", "package.json defines bin");
+  if (packageJson == null ? void 0 : packageJson.bin) addPrimary("node-cli", "package.json defines bin");
   const primaryStack = pickPrimaryStack(primaryCandidates);
   const orderedCapabilities = orderLabels(
     [.../* @__PURE__ */ new Set([...capabilities, ...primaryCandidates])].filter((label) => label !== primaryStack)
@@ -761,7 +764,8 @@ function detectPackageManager(cwd, stack) {
   return "npm";
 }
 function detectTestCommand(cwd, packageJson, stack) {
-  if (packageJson?.scripts?.test) return `${packageManagerCommand(cwd)} test`;
+  var _a;
+  if ((_a = packageJson == null ? void 0 : packageJson.scripts) == null ? void 0 : _a.test) return `${packageManagerCommand(cwd)} test`;
   if (stack.includes("laravel")) return "php artisan test";
   if (stack.includes("go")) return "go test ./...";
   if (stack.includes("rust")) return "cargo test";
@@ -769,7 +773,8 @@ function detectTestCommand(cwd, packageJson, stack) {
   return "document the test command";
 }
 function detectBuildCommand(cwd, packageJson, stack) {
-  if (packageJson?.scripts?.build) return `${packageManagerCommand(cwd)} run build`;
+  var _a;
+  if ((_a = packageJson == null ? void 0 : packageJson.scripts) == null ? void 0 : _a.build) return `${packageManagerCommand(cwd)} run build`;
   if (stack.includes("laravel")) return "composer install && php artisan test";
   if (stack.includes("go")) return "go build ./...";
   if (stack.includes("rust")) return "cargo build";
@@ -892,12 +897,12 @@ function qualityWarnings(cwd) {
 }
 function commandWarnings(packageInfo, config) {
   const warnings = [];
-  if (packageInfo?.scripts) {
-    if (!packageInfo.scripts.test && (!config?.testCommand || config.testCommand.startsWith("document ")))
+  if (packageInfo == null ? void 0 : packageInfo.scripts) {
+    if (!packageInfo.scripts.test && (!(config == null ? void 0 : config.testCommand) || config.testCommand.startsWith("document ")))
       warnings.push("No test command documented.");
-    if (!packageInfo.scripts.build && (!config?.buildCommand || config.buildCommand.startsWith("document ")))
+    if (!packageInfo.scripts.build && (!(config == null ? void 0 : config.buildCommand) || config.buildCommand.startsWith("document ")))
       warnings.push("No build command documented.");
-  } else if (!config?.testCommand || config.testCommand.startsWith("document ")) {
+  } else if (!(config == null ? void 0 : config.testCommand) || config.testCommand.startsWith("document ")) {
     warnings.push("No package scripts or documented test command detected.");
   }
   return warnings;
@@ -1100,8 +1105,9 @@ var PACKS = {
   ]
 };
 function writePack(cwd, pack, profile, options = {}) {
+  var _a;
   if (!isPack(pack)) throw new Error(`pack writer missing for "${pack}"`);
-  const entries = PACKS[pack]?.(profile);
+  const entries = (_a = PACKS[pack]) == null ? void 0 : _a.call(PACKS, profile);
   if (!entries) throw new Error(`pack writer missing for "${pack}"`);
   for (const entry of entries) {
     if (entry.kind === "command") writeClaudeCommand(cwd, entry.name, entry.body);
@@ -1644,6 +1650,7 @@ function addPack(cwd, pack, options) {
   if (options.dryRun) console.log("Dry run only. No files were written.");
 }
 function printFocus(cwd, scope) {
+  var _a;
   const profile = detectProject(cwd);
   const stack = profile.primaryStack ?? profile.template;
   const scopeLabel = scope ?? "current task";
@@ -1654,7 +1661,7 @@ function printFocus(cwd, scope) {
   console.log("");
   console.log(`Scope: ${scopeLabel}`);
   console.log(`Detected stack: ${stack}`);
-  if (profile.capabilities?.length) console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
+  if ((_a = profile.capabilities) == null ? void 0 : _a.length) console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
   console.log("");
   console.log("Load first:");
   for (const item of uniqueExisting(cwd, candidates)) console.log(`- ${item}`);
@@ -1662,13 +1669,14 @@ function printFocus(cwd, scope) {
   console.log("Working rule: keep the agent context limited to the scope, touched files, and repo memory above.");
 }
 function printSummary(cwd, scope) {
+  var _a;
   const profile = detectProject(cwd);
   console.log("AgentKick summary");
   console.log("");
   console.log(`Project: ${profile.name}`);
   if (scope) console.log(`Scope: ${scope}`);
   console.log(`Stack: ${profile.primaryStack ?? profile.template}`);
-  if (profile.capabilities?.length) console.log(`Capabilities: ${profile.capabilities.join(", ")}`);
+  if ((_a = profile.capabilities) == null ? void 0 : _a.length) console.log(`Capabilities: ${profile.capabilities.join(", ")}`);
   console.log(`Package manager: ${profile.packageManager}`);
   console.log(`Test: ${profile.testCommand}`);
   console.log(`Build: ${profile.buildCommand}`);
@@ -1704,8 +1712,9 @@ function sanitizeProjectName(name) {
   return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 function printDetectionSummary(profile) {
+  var _a;
   console.log(`Detected stack: ${profile.primaryStack ?? profile.template ?? "generic"}`);
-  if (profile.capabilities?.length) {
+  if ((_a = profile.capabilities) == null ? void 0 : _a.length) {
     console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
   }
   if ((profile.primaryStack ?? profile.template) === "generic") {
