@@ -221,6 +221,7 @@ function printDetectionSummary(profile: ProjectProfile) {
   }
   if ((profile.primaryStack ?? profile.template) === "generic") {
     console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    printWorkspaceHints(profile);
   }
 }
 
@@ -239,4 +240,16 @@ function isTemplate(value: string): value is Template {
 
 function isPack(value: string): value is Pack {
   return SUPPORTED_PACKS.includes(value as Pack);
+}
+
+function printWorkspaceHints(profile: ProjectProfile) {
+  const hints = profile.detection?.workspaceHints ?? [];
+  if (hints.length === 0) return;
+
+  console.log("");
+  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log("Run AgentKick inside one project folder, for example:");
+  for (const hint of hints.slice(0, 5)) {
+    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+  }
 }

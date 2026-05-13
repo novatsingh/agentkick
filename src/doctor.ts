@@ -70,6 +70,7 @@ function auditRepo(cwd: string): DoctorAudit {
       primaryStack: profile.primaryStack ?? profile.template,
       capabilities: profile.capabilities ?? [],
       detected: profile.stack,
+      workspaceHints: [],
       filesChecked: [],
       dependencies: [],
       configFiles: [],
@@ -90,6 +91,7 @@ function printAudit(audit: DoctorAudit, options: DoctorOptions) {
     console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
   if (audit.detectedStack === "generic") {
     console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    printWorkspaceHints(audit.detectionDebug);
   }
   console.log("");
   console.log(`AI-readiness score: ${audit.score}/100`);
@@ -204,6 +206,17 @@ function printDetectionDebug(detection: DetectionDebug) {
   printList(detection.configFiles);
   console.log("Final detection reasoning:");
   printList(detection.reasoning);
+}
+
+function printWorkspaceHints(detection: DetectionDebug) {
+  if (detection.workspaceHints.length === 0) return;
+
+  console.log("");
+  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log("Run AgentKick inside one project folder, for example:");
+  for (const hint of detection.workspaceHints.slice(0, 5)) {
+    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+  }
 }
 
 function printList(items: string[]) {

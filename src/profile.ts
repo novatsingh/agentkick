@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { existsAny, hasText, listTopLevelFiles, readJsonSafe } from "./fs-utils.js";
-import type { DetectionDebug, PackageJson, ProjectProfile, Template } from "./types.js";
+import type { DetectionDebug, PackageJson, ProjectProfile, Template, WorkspaceHint } from "./types.js";
 
 export function buildProfile(template: Template, projectName: string): ProjectProfile {
   const stackByTemplate: Record<Template, string[]> = {
@@ -233,9 +233,15 @@ function analyzeProject(cwd: string, packageJson: PackageJson | null): Detection
   const orderedCapabilities = orderLabels(
     [...new Set([...capabilities, ...primaryCandidates])].filter((label) => label !== primaryStack)
   );
+  const workspaceHints = primaryStack === "generic" ? findWorkspaceHints(cwd) : [];
 
   if (primaryStack === "generic") {
     reasoning.push("generic: no supported stack markers were found");
+    if (workspaceHints.length > 0) {
+      reasoning.push(
+        `workspace: found project markers in child folders: ${workspaceHints.map((hint) => hint.path).join(", ")}`
+      );
+    }
   }
 
   return {
@@ -243,6 +249,7 @@ function analyzeProject(cwd: string, packageJson: PackageJson | null): Detection
     primaryStack,
     capabilities: orderedCapabilities,
     detected: primaryStack === "generic" ? [] : [primaryStack, ...orderedCapabilities],
+    workspaceHints,
     filesChecked: [...checked].sort(),
     dependencies: [...packageDependencies(packageJson)].sort(),
     configFiles: [...configFiles].sort(),
@@ -302,6 +309,66 @@ function directoryExists(cwd: string, relativePath: string, checked = new Set<st
   } catch {
     return false;
   }
+}
+
+function findWorkspaceHints(cwd: string): WorkspaceHint[] {
+  const ignored = new Set([".git", ".next", "dist", "build", "node_modules", "vendor", "target"]);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(cwd, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((entry) => entry.isDirectory() && !ignored.has(entry.name))
+    .map((entry) => childProjectHint(cwd, entry.name))
+    .filter((hint): hint is WorkspaceHint => Boolean(hint))
+    .slice(0, 8);
+}
+
+function childProjectHint(cwd: string, name: string): WorkspaceHint | null {
+  const child = path.join(cwd, name);
+  const files = listTopLevelFiles(child);
+  const packageJson = readJsonSafe<PackageJson>(path.join(child, "package.json"));
+  const evidence: string[] = [];
+  const candidates = new Set<string>();
+
+  if (files.has("turbo.json")) addHint(candidates, evidence, "monorepo-turborepo", "turbo.json");
+  if (files.has("pnpm-workspace.yaml")) addHint(candidates, evidence, "monorepo-pnpm", "pnpm-workspace.yaml");
+
+  const manifest = readJsonSafe<{ manifest_version?: number }>(path.join(child, "manifest.json"));
+  if (manifest?.manifest_version) addHint(candidates, evidence, "chrome-extension", "manifest.json");
+
+  if (hasDependency(packageJson, "next") || hasMatchingFile(files, /^next\.config\.(js|mjs|cjs|ts)$/)) {
+    addHint(candidates, evidence, "nextjs", hasDependency(packageJson, "next") ? "package.json next" : "next.config.*");
+  }
+  if (hasDependency(packageJson, "vite") || hasMatchingFile(files, /^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/)) {
+    addHint(candidates, evidence, "vite", hasDependency(packageJson, "vite") ? "package.json vite" : "vite.config.*");
+  }
+  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
+    addHint(candidates, evidence, "node-api", "package.json API dependency");
+  }
+  if (hasDependency(packageJson, "react")) addHint(candidates, evidence, "react", "package.json react");
+  if (packageJson?.bin) addHint(candidates, evidence, "node-cli", "package.json bin");
+  if (files.has("pyproject.toml") || files.has("requirements.txt"))
+    addHint(candidates, evidence, "python", "Python project files");
+  if (files.has("composer.json")) addHint(candidates, evidence, "php", "composer.json");
+  if (files.has("go.mod")) addHint(candidates, evidence, "go", "go.mod");
+  if (files.has("Cargo.toml")) addHint(candidates, evidence, "rust", "Cargo.toml");
+
+  const stack = pickPrimaryStack(candidates);
+  if (stack === "generic") return null;
+  return { path: name, stack, evidence };
+}
+
+function addHint(candidates: Set<string>, evidence: string[], stack: string, reason: string) {
+  candidates.add(stack);
+  evidence.push(reason);
+}
+
+function hasMatchingFile(files: Set<string>, pattern: RegExp) {
+  return [...files].some((file) => pattern.test(file));
 }
 
 function detectPackageManager(cwd: string, stack: string[]) {

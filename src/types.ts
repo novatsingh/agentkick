@@ -42,10 +42,17 @@ export type DetectionDebug = {
   primaryStack: string;
   capabilities: string[];
   detected: string[];
+  workspaceHints: WorkspaceHint[];
   filesChecked: string[];
   dependencies: string[];
   configFiles: string[];
   reasoning: string[];
+};
+
+export type WorkspaceHint = {
+  path: string;
+  stack: string;
+  evidence: string[];
 };
 
 export type ProjectProfile = {

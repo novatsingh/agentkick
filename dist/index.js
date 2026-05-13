@@ -687,14 +687,21 @@ function analyzeProject(cwd, packageJson) {
   const orderedCapabilities = orderLabels(
     [.../* @__PURE__ */ new Set([...capabilities, ...primaryCandidates])].filter((label) => label !== primaryStack)
   );
+  const workspaceHints = primaryStack === "generic" ? findWorkspaceHints(cwd) : [];
   if (primaryStack === "generic") {
     reasoning.push("generic: no supported stack markers were found");
+    if (workspaceHints.length > 0) {
+      reasoning.push(
+        `workspace: found project markers in child folders: ${workspaceHints.map((hint) => hint.path).join(", ")}`
+      );
+    }
   }
   return {
     cwd,
     primaryStack,
     capabilities: orderedCapabilities,
     detected: primaryStack === "generic" ? [] : [primaryStack, ...orderedCapabilities],
+    workspaceHints,
     filesChecked: [...checked].sort(),
     dependencies: [...packageDependencies(packageJson)].sort(),
     configFiles: [...configFiles].sort(),
@@ -751,6 +758,53 @@ function directoryExists(cwd, relativePath, checked = /* @__PURE__ */ new Set())
   } catch {
     return false;
   }
+}
+function findWorkspaceHints(cwd) {
+  const ignored = /* @__PURE__ */ new Set([".git", ".next", "dist", "build", "node_modules", "vendor", "target"]);
+  let entries;
+  try {
+    entries = fs2.readdirSync(cwd, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.filter((entry) => entry.isDirectory() && !ignored.has(entry.name)).map((entry) => childProjectHint(cwd, entry.name)).filter((hint) => Boolean(hint)).slice(0, 8);
+}
+function childProjectHint(cwd, name) {
+  const child = path2.join(cwd, name);
+  const files = listTopLevelFiles(child);
+  const packageJson = readJsonSafe(path2.join(child, "package.json"));
+  const evidence = [];
+  const candidates = /* @__PURE__ */ new Set();
+  if (files.has("turbo.json")) addHint(candidates, evidence, "monorepo-turborepo", "turbo.json");
+  if (files.has("pnpm-workspace.yaml")) addHint(candidates, evidence, "monorepo-pnpm", "pnpm-workspace.yaml");
+  const manifest = readJsonSafe(path2.join(child, "manifest.json"));
+  if (manifest == null ? void 0 : manifest.manifest_version) addHint(candidates, evidence, "chrome-extension", "manifest.json");
+  if (hasDependency(packageJson, "next") || hasMatchingFile(files, /^next\.config\.(js|mjs|cjs|ts)$/)) {
+    addHint(candidates, evidence, "nextjs", hasDependency(packageJson, "next") ? "package.json next" : "next.config.*");
+  }
+  if (hasDependency(packageJson, "vite") || hasMatchingFile(files, /^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/)) {
+    addHint(candidates, evidence, "vite", hasDependency(packageJson, "vite") ? "package.json vite" : "vite.config.*");
+  }
+  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
+    addHint(candidates, evidence, "node-api", "package.json API dependency");
+  }
+  if (hasDependency(packageJson, "react")) addHint(candidates, evidence, "react", "package.json react");
+  if (packageJson == null ? void 0 : packageJson.bin) addHint(candidates, evidence, "node-cli", "package.json bin");
+  if (files.has("pyproject.toml") || files.has("requirements.txt"))
+    addHint(candidates, evidence, "python", "Python project files");
+  if (files.has("composer.json")) addHint(candidates, evidence, "php", "composer.json");
+  if (files.has("go.mod")) addHint(candidates, evidence, "go", "go.mod");
+  if (files.has("Cargo.toml")) addHint(candidates, evidence, "rust", "Cargo.toml");
+  const stack = pickPrimaryStack(candidates);
+  if (stack === "generic") return null;
+  return { path: name, stack, evidence };
+}
+function addHint(candidates, evidence, stack, reason) {
+  candidates.add(stack);
+  evidence.push(reason);
+}
+function hasMatchingFile(files, pattern) {
+  return [...files].some((file2) => pattern.test(file2));
 }
 function detectPackageManager(cwd, stack) {
   const files = listTopLevelFiles(cwd);
@@ -840,6 +894,7 @@ function auditRepo(cwd) {
       primaryStack: profile.primaryStack ?? profile.template,
       capabilities: profile.capabilities ?? [],
       detected: profile.stack,
+      workspaceHints: [],
       filesChecked: [],
       dependencies: [],
       configFiles: [],
@@ -859,6 +914,7 @@ function printAudit(audit, options) {
     console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
   if (audit.detectedStack === "generic") {
     console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    printWorkspaceHints(audit.detectionDebug);
   }
   console.log("");
   console.log(`AI-readiness score: ${audit.score}/100`);
@@ -961,6 +1017,15 @@ function printDetectionDebug(detection) {
   printList(detection.configFiles);
   console.log("Final detection reasoning:");
   printList(detection.reasoning);
+}
+function printWorkspaceHints(detection) {
+  if (detection.workspaceHints.length === 0) return;
+  console.log("");
+  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log("Run AgentKick inside one project folder, for example:");
+  for (const hint of detection.workspaceHints.slice(0, 5)) {
+    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+  }
 }
 function printList(items) {
   if (!items || items.length === 0) {
@@ -1719,6 +1784,7 @@ function printDetectionSummary(profile) {
   }
   if ((profile.primaryStack ?? profile.template) === "generic") {
     console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    printWorkspaceHints2(profile);
   }
 }
 function applyWriteMode(program, options = {}) {
@@ -1733,6 +1799,17 @@ function isTemplate(value) {
 }
 function isPack2(value) {
   return SUPPORTED_PACKS.includes(value);
+}
+function printWorkspaceHints2(profile) {
+  var _a;
+  const hints = ((_a = profile.detection) == null ? void 0 : _a.workspaceHints) ?? [];
+  if (hints.length === 0) return;
+  console.log("");
+  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log("Run AgentKick inside one project folder, for example:");
+  for (const hint of hints.slice(0, 5)) {
+    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+  }
 }
 
 // src/index.ts
