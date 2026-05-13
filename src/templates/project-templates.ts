@@ -157,8 +157,23 @@ No active task.
 `
     },
     {
+      path: "FEATURE_SUMMARIES.md",
+      content: `# Feature Summaries
+
+Keep one short section per feature. Each section should explain ownership, important files, and current risks.
+
+## Template Features
+
+- Project type: {{templateLabel}}
+- Source boundaries are documented in \`ARCHITECTURE.md\`.
+- Add feature entries when implementation begins.
+`
+    },
+    {
       path: "DECISIONS.md",
       content: `# Decisions
+
+Record durable technical and product decisions here. Keep entries short enough for agents to scan.
 
 ## Format
 

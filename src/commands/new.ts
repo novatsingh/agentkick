@@ -33,7 +33,7 @@ export function registerNewCommand(program: Command, context: CommandContext) {
         packs: ["core", ...defaultPacks]
       };
       writeTemplateProject(projectDir, profile);
-      writeAgentFiles(projectDir, profile);
+      writeAgentFiles(projectDir, profile, { includeWorkflowMemory: false });
       writePack(projectDir, "core", profile, { updateConfig: false });
       for (const pack of defaultPacks) writePack(projectDir, pack, profile, { updateConfig: false });
 

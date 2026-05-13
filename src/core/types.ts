@@ -39,6 +39,27 @@ export type DetectionDebug = {
   reasoning: string[];
 };
 
+export type DoctorProblemSeverity = "low" | "medium" | "high";
+
+export type DoctorProblem = {
+  severity: DoctorProblemSeverity;
+  category:
+    | "memory"
+    | "modularity"
+    | "file-size"
+    | "react-component"
+    | "token-waste"
+    | "task-isolation"
+    | "structure"
+    | "commands"
+    | "security"
+    | "ci";
+  title: string;
+  file?: string;
+  detail: string;
+  suggestion: string;
+};
+
 export type WorkspaceHint = {
   path: string;
   stack: string;

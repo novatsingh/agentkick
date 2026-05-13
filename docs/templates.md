@@ -7,6 +7,7 @@ Every template includes:
 - `AGENTS.md`
 - `CURRENT_TASK.md`
 - `ARCHITECTURE.md`
+- `FEATURE_SUMMARIES.md`
 - `WORKFLOW_RULES.md`
 - `DECISIONS.md`
 - `TASK_HISTORY.md`

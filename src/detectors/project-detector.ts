@@ -104,6 +104,8 @@ function analyzeProject(cwd: string, packageJson: PackageJson | null): Detection
     "supabase",
     "app/api",
     "pages/api",
+    "src-tauri",
+    "tauri.conf.json",
     "docker-compose.yml",
     "docker-compose.yaml",
     "Dockerfile",
@@ -163,6 +165,11 @@ function analyzeProject(cwd: string, packageJson: PackageJson | null): Detection
     addPrimary("vite", viteConfigs.length > 0 ? `${viteConfigs[0]} exists` : "package.json depends on vite");
   }
 
+  if (packageJson || files.has("package-lock.json") || files.has("pnpm-lock.yaml") || files.has("yarn.lock")) {
+    addCapability("nodejs", "Node package metadata or lockfile exists");
+    primaryCandidates.add("nodejs");
+  }
+
   if (hasDependency(packageJson, "react")) {
     addCapability("react", "package.json depends on react");
     primaryCandidates.add("react");
@@ -199,6 +206,9 @@ function analyzeProject(cwd: string, packageJson: PackageJson | null): Detection
   if (files.has("go.mod")) addPrimary("go", "go.mod exists");
   if (files.has("Cargo.toml")) addPrimary("rust", "Cargo.toml exists");
   if (hasDependency(packageJson, "electron")) addPrimary("electron", "package.json depends on electron");
+  if (hasDependency(packageJson, "@tauri-apps/api") || directoryExists(cwd, "src-tauri", checked)) {
+    addPrimary("tauri", "Tauri dependency or src-tauri folder exists");
+  }
   if (packageJson?.bin) addPrimary("node-cli", "package.json defines bin");
 
   const primaryStack = pickPrimaryStack(primaryCandidates);
@@ -238,6 +248,7 @@ function pickPrimaryStack(candidates: Set<string>) {
     "vite",
     "node-api",
     "electron",
+    "tauri",
     "fastapi",
     "flask",
     "laravel",
@@ -246,6 +257,7 @@ function pickPrimaryStack(candidates: Set<string>) {
     "python",
     "php",
     "react",
+    "nodejs",
     "node-cli"
   ];
   return priority.find((label) => candidates.has(label)) ?? "generic";
@@ -258,11 +270,14 @@ function orderLabels(labels: string[]) {
     "prisma",
     "supabase",
     "api-routes",
+    "nodejs",
     "docker",
     "netlify",
     "nextjs",
     "vite",
     "node-api",
+    "electron",
+    "tauri",
     "chrome-extension",
     "monorepo-turborepo",
     "monorepo-pnpm"
@@ -322,6 +337,9 @@ function childProjectHint(cwd: string, name: string): WorkspaceHint | null {
     addHint(candidates, evidence, "node-api", "package.json API dependency");
   }
   if (hasDependency(packageJson, "react")) addHint(candidates, evidence, "react", "package.json react");
+  if (hasDependency(packageJson, "electron")) addHint(candidates, evidence, "electron", "package.json electron");
+  if (hasDependency(packageJson, "@tauri-apps/api") || files.has("src-tauri"))
+    addHint(candidates, evidence, "tauri", "Tauri markers");
   if (packageJson?.bin) addHint(candidates, evidence, "node-cli", "package.json bin");
   if (files.has("pyproject.toml") || files.has("requirements.txt"))
     addHint(candidates, evidence, "python", "Python project files");

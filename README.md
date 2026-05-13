@@ -93,8 +93,13 @@ Example output:
 ```text
 AgentKick doctor
 
-AI-readiness score: 100/100
+AI Readiness Score: 100/100
 Status: ready
+
+Detected stack:
+- nextjs
+- react
+- tailwind
 
 PASS master repo intelligence: AGENTS.md
 PASS Claude memory: CLAUDE.md
@@ -205,7 +210,7 @@ Supported templates:
 - `marketplace`
 - `internal-tool`
 
-Every template includes `AGENTS.md`, `CURRENT_TASK.md`, `ARCHITECTURE.md`, `WORKFLOW_RULES.md`, `DECISIONS.md`, `TASK_HISTORY.md`, a modular app structure, and starter verification commands.
+Every template includes `AGENTS.md`, `CURRENT_TASK.md`, `ARCHITECTURE.md`, `FEATURE_SUMMARIES.md`, `WORKFLOW_RULES.md`, `DECISIONS.md`, `TASK_HISTORY.md`, a modular app structure, and starter verification commands.
 
 ## Packs
 
