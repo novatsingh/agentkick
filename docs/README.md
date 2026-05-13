@@ -59,6 +59,14 @@ AgentKick is an AI workflow operating system for software repositories. These do
 - [Virality Strategy](productization/VIRALITY_STRATEGY.md)
 - [README Structure](productization/README_STRUCTURE.md)
 
+## Architecture Audit
+
+- [Architecture Audit](audit/ARCHITECTURE_AUDIT.md)
+- [Simplification Plan](audit/SIMPLIFICATION_PLAN.md)
+- [Feature Pruning](audit/FEATURE_PRUNING.md)
+- [Core Identity](audit/CORE_IDENTITY.md)
+- [MVP Alignment](audit/MVP_ALIGNMENT.md)
+
 ## Product Boundary
 
 AgentKick is not semantic search, vector retrieval, embeddings infrastructure, or GraphRAG. It is repo standardization, persistent memory, context optimization, task orchestration, and workflow readiness for coding agents.
