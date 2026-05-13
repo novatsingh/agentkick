@@ -42,7 +42,7 @@ Packs:
 
 Examples:
   agentkick new
-  agentkick new chrome-extension maps-lead-finder
+  agentkick new chrome-extension browser-helper
   agentkick new fastapi my-api
   agentkick new go-cli my-tool
   cd existing-repo && agentkick init

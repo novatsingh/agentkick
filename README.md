@@ -105,7 +105,7 @@ PASS AgentKick config: .agentkick.json
 Creates an agent-ready starter project.
 
 ```bash
-agentkick new chrome-extension maps-lead-finder
+agentkick new chrome-extension browser-helper
 agentkick new nextjs my-saas
 agentkick new fastapi my-api
 ```
@@ -187,7 +187,7 @@ The upcoming v1 workflow layer adds `.agentkick/memory/*` and `.agentkick/contex
 AgentKick can also create agent-ready starter projects:
 
 ```bash
-agentkick new chrome-extension maps-lead-finder
+agentkick new chrome-extension browser-helper
 agentkick new nextjs my-saas
 agentkick new fastapi my-api
 agentkick new go-cli my-tool
