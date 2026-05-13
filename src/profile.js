@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { existsAny, hasText, listTopLevelFiles, readJsonSafe } from "./fs-utils.js";
 
@@ -55,28 +56,18 @@ export function buildProfile(template, projectName) {
 export function detectProject(cwd) {
   const packageJson = readJsonSafe(path.join(cwd, "package.json"));
   const name = packageJson?.name ?? path.basename(cwd);
-  const files = listTopLevelFiles(cwd);
-  const stack = [];
-
-  if (files.has("manifest.json") || existsAny(cwd, ["public/manifest.json", "src/manifest.json"])) stack.push("chrome-extension");
-  if (files.has("next.config.js") || files.has("next.config.mjs") || hasDependency(packageJson, "next")) stack.push("nextjs");
-  if (hasDependency(packageJson, "react")) stack.push("react");
-  if (files.has("netlify.toml")) stack.push("netlify");
-  if (files.has("Dockerfile") || files.has("docker-compose.yml")) stack.push("docker");
-  if (files.has("pyproject.toml") || files.has("requirements.txt")) stack.push("python");
-  if (existsAny(cwd, ["app/main.py"]) && hasText(path.join(cwd, "app/main.py"), "FastAPI")) stack.push("fastapi");
-  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path.join(cwd, "app.py"), "Flask")) stack.push("flask");
-  if (files.has("composer.json")) stack.push("php");
-  if (files.has("artisan")) stack.push("laravel");
-  if (files.has("go.mod")) stack.push("go");
-  if (files.has("Cargo.toml")) stack.push("rust");
-  if (hasDependency(packageJson, "electron")) stack.push("electron");
-  if (packageJson?.bin) stack.push("node-cli");
+  const detection = analyzeProject(cwd, packageJson);
+  const primaryStack = detection.primaryStack;
+  const capabilities = detection.capabilities;
+  const stack = primaryStack === "generic" ? [] : [primaryStack, ...capabilities];
 
   return {
     name,
-    template: stack[0] ?? "generic",
+    template: primaryStack,
+    primaryStack,
+    capabilities,
     stack,
+    detection,
     packageManager: detectPackageManager(cwd, stack),
     testCommand: detectTestCommand(cwd, packageJson, stack),
     buildCommand: detectBuildCommand(cwd, packageJson, stack),
@@ -101,17 +92,212 @@ export function defaultPacksForTemplate(template) {
 
 export function packageManagerCommand(cwd) {
   const files = listTopLevelFiles(cwd);
+  if (files.has("pnpm-workspace.yaml")) return "pnpm";
   if (files.has("pnpm-lock.yaml")) return "pnpm";
   if (files.has("yarn.lock")) return "yarn";
   return "npm";
 }
 
 function hasDependency(packageJson, dependency) {
-  return Boolean(packageJson?.dependencies?.[dependency] || packageJson?.devDependencies?.[dependency]);
+  return packageDependencies(packageJson).has(dependency);
+}
+
+function hasAnyDependency(packageJson, dependencies) {
+  const available = packageDependencies(packageJson);
+  return dependencies.some((dependency) => available.has(dependency));
+}
+
+function packageDependencies(packageJson) {
+  const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+  const entries = sections.flatMap((section) => Object.keys(packageJson?.[section] ?? {}));
+  return new Set(entries);
+}
+
+function analyzeProject(cwd, packageJson) {
+  const files = listTopLevelFiles(cwd);
+  const checked = new Set([
+    "package.json",
+    "manifest.json",
+    "public/manifest.json",
+    "src/manifest.json",
+    "next.config.*",
+    "vite.config.*",
+    "tailwind.config.*",
+    "prisma/schema.prisma",
+    "supabase",
+    "app/api",
+    "pages/api",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "Dockerfile",
+    "turbo.json",
+    "pnpm-workspace.yaml"
+  ]);
+  const configFiles = new Set();
+  const reasoning = [];
+  const detected = new Set();
+  const primaryCandidates = new Set();
+  const capabilities = new Set();
+
+  const checkPath = (relativePath) => {
+    checked.add(relativePath);
+    return fs.existsSync(path.join(cwd, relativePath));
+  };
+  const addConfig = (relativePath) => {
+    configFiles.add(relativePath);
+    checked.add(relativePath);
+  };
+  const addPrimary = (label, reason) => {
+    detected.add(label);
+    primaryCandidates.add(label);
+    reasoning.push(`${label}: ${reason}`);
+  };
+  const addCapability = (label, reason) => {
+    detected.add(label);
+    capabilities.add(label);
+    reasoning.push(`${label}: ${reason}`);
+  };
+
+  const topLevelMatches = (pattern) => {
+    const matches = [...files].filter((file) => pattern.test(file)).sort();
+    for (const match of matches) addConfig(match);
+    return matches;
+  };
+
+  if (topLevelMatches(/^turbo\.json$/).length > 0) addPrimary("monorepo-turborepo", "turbo.json exists");
+  if (topLevelMatches(/^pnpm-workspace\.yaml$/).length > 0) addPrimary("monorepo-pnpm", "pnpm-workspace.yaml exists");
+
+  const manifestFiles = ["manifest.json", "public/manifest.json", "src/manifest.json"].filter((file) => checkPath(file));
+  const chromeManifest = manifestFiles.find((file) => readJsonSafe(path.join(cwd, file))?.manifest_version);
+  if (chromeManifest) {
+    addConfig(chromeManifest);
+    addPrimary("chrome-extension", `${chromeManifest} contains manifest_version`);
+  }
+
+  const nextConfigs = topLevelMatches(/^next\.config\.(js|mjs|cjs|ts)$/);
+  if (nextConfigs.length > 0 || hasDependency(packageJson, "next")) {
+    addPrimary("nextjs", nextConfigs.length > 0 ? `${nextConfigs[0]} exists` : "package.json depends on next");
+  }
+
+  const viteConfigs = topLevelMatches(/^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/);
+  if (viteConfigs.length > 0 || hasDependency(packageJson, "vite")) {
+    addPrimary("vite", viteConfigs.length > 0 ? `${viteConfigs[0]} exists` : "package.json depends on vite");
+  }
+
+  if (hasDependency(packageJson, "react")) {
+    addCapability("react", "package.json depends on react");
+    primaryCandidates.add("react");
+  }
+
+  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
+    addPrimary("node-api", "package.json depends on express, fastify, or hono");
+  }
+
+  if (checkPath("prisma/schema.prisma")) addCapability("prisma", "prisma/schema.prisma exists");
+  if (directoryExists(cwd, "supabase", checked)) addCapability("supabase", "supabase folder exists");
+  if (directoryExists(cwd, "app/api", checked) || directoryExists(cwd, "pages/api", checked)) {
+    addCapability("api-routes", "app/api or pages/api exists");
+  }
+
+  const tailwindConfigs = topLevelMatches(/^tailwind\.config\.(js|mjs|cjs|ts)$/);
+  if (tailwindConfigs.length > 0) addCapability("tailwind", `${tailwindConfigs[0]} exists`);
+
+  if (topLevelMatches(/^docker-compose\.ya?ml$/).length > 0 || checkPath("Dockerfile")) {
+    addCapability("docker", "docker-compose.yml or Dockerfile exists");
+  }
+
+  if (files.has("netlify.toml")) {
+    addConfig("netlify.toml");
+    addCapability("netlify", "netlify.toml exists");
+  }
+  if (files.has("pyproject.toml") || files.has("requirements.txt")) addPrimary("python", "Python project files exist");
+  if (existsAny(cwd, ["app/main.py"]) && hasText(path.join(cwd, "app/main.py"), "FastAPI")) addPrimary("fastapi", "app/main.py imports FastAPI");
+  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path.join(cwd, "app.py"), "Flask")) addPrimary("flask", "Flask app entrypoint detected");
+  if (files.has("composer.json")) addPrimary("php", "composer.json exists");
+  if (files.has("artisan")) addPrimary("laravel", "artisan exists");
+  if (files.has("go.mod")) addPrimary("go", "go.mod exists");
+  if (files.has("Cargo.toml")) addPrimary("rust", "Cargo.toml exists");
+  if (hasDependency(packageJson, "electron")) addPrimary("electron", "package.json depends on electron");
+  if (packageJson?.bin) addPrimary("node-cli", "package.json defines bin");
+
+  const primaryStack = pickPrimaryStack(primaryCandidates);
+  const orderedCapabilities = orderLabels(
+    [...new Set([...capabilities, ...primaryCandidates])].filter((label) => label !== primaryStack)
+  );
+
+  if (primaryStack === "generic") {
+    reasoning.push("generic: no supported stack markers were found");
+  }
+
+  return {
+    cwd,
+    primaryStack,
+    capabilities: orderedCapabilities,
+    detected: primaryStack === "generic" ? [] : [primaryStack, ...orderedCapabilities],
+    filesChecked: [...checked].sort(),
+    dependencies: [...packageDependencies(packageJson)].sort(),
+    configFiles: [...configFiles].sort(),
+    reasoning
+  };
+}
+
+function pickPrimaryStack(candidates) {
+  const priority = [
+    "monorepo-turborepo",
+    "monorepo-pnpm",
+    "chrome-extension",
+    "nextjs",
+    "vite",
+    "node-api",
+    "electron",
+    "fastapi",
+    "flask",
+    "laravel",
+    "go",
+    "rust",
+    "python",
+    "php",
+    "react",
+    "node-cli"
+  ];
+  return priority.find((label) => candidates.has(label)) ?? "generic";
+}
+
+function orderLabels(labels) {
+  const priority = [
+    "react",
+    "tailwind",
+    "prisma",
+    "supabase",
+    "api-routes",
+    "docker",
+    "netlify",
+    "nextjs",
+    "vite",
+    "node-api",
+    "chrome-extension",
+    "monorepo-turborepo",
+    "monorepo-pnpm"
+  ];
+  return labels.sort((a, b) => {
+    const aIndex = priority.includes(a) ? priority.indexOf(a) : priority.length;
+    const bIndex = priority.includes(b) ? priority.indexOf(b) : priority.length;
+    return aIndex - bIndex || a.localeCompare(b);
+  });
+}
+
+function directoryExists(cwd, relativePath, checked = new Set()) {
+  checked.add(relativePath);
+  try {
+    return fs.statSync(path.join(cwd, relativePath)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function detectPackageManager(cwd, stack) {
   const files = listTopLevelFiles(cwd);
+  if (files.has("pnpm-workspace.yaml")) return "pnpm";
   if (files.has("pnpm-lock.yaml")) return "pnpm";
   if (files.has("yarn.lock")) return "yarn";
   if (stack.includes("laravel") || files.has("composer.json")) return "composer";

@@ -32,7 +32,7 @@ Usage:
   agentkick new [template] [project-name]
   agentkick init [--dry-run]
   agentkick add <pack> [--dry-run]
-  agentkick doctor [--strict] [--json]
+  agentkick doctor [--strict] [--json] [--debug]
 
 Templates:
   ${SUPPORTED_TEMPLATES.join(", ")}
@@ -88,7 +88,7 @@ function initExistingProject(cwd, options) {
   writePack(cwd, "core", profile);
   console.log(`Initialized AI-agent setup for ${profile.name}.`);
   if (options.dryRun) console.log("Dry run only. No files were written.");
-  console.log(`Detected stack: ${profile.stack.join(", ") || "generic"}`);
+  printDetectionSummary(profile);
 }
 
 function addPack(cwd, input, options) {
@@ -144,7 +144,8 @@ function sanitizeProjectName(name) {
 function parseDoctorOptions(input) {
   return {
     strict: input.includes("--strict"),
-    json: input.includes("--json")
+    json: input.includes("--json"),
+    debug: input.includes("--debug")
   };
 }
 
@@ -156,4 +157,14 @@ function parseGlobalOptions(input) {
     options,
     commandArgs: input.filter((arg) => arg !== "--dry-run")
   };
+}
+
+function printDetectionSummary(profile) {
+  console.log(`Detected stack: ${profile.primaryStack ?? profile.template ?? "generic"}`);
+  if (profile.capabilities?.length > 0) {
+    console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
+  }
+  if ((profile.primaryStack ?? profile.template) === "generic") {
+    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+  }
 }

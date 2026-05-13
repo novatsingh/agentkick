@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readJsonSafe } from "./fs-utils.js";
+import { detectProject } from "./profile.js";
 
 export function runDoctor(cwd, options = {}) {
   const audit = auditRepo(cwd);
@@ -17,6 +18,7 @@ export function runDoctor(cwd, options = {}) {
 function auditRepo(cwd) {
   const packageInfo = readJsonSafe(path.join(cwd, "package.json"));
   const config = readJsonSafe(path.join(cwd, ".agentkick.json"));
+  const profile = detectProject(cwd);
   const checks = [
     requiredFile(cwd, "AGENTS.md", "master repo intelligence"),
     requiredFile(cwd, "CLAUDE.md", "Claude memory"),
@@ -41,6 +43,9 @@ function auditRepo(cwd) {
   return {
     score,
     status: failures.length === 0 && score >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
+    detectedStack: profile.primaryStack,
+    detectedCapabilities: profile.capabilities,
+    detectionDebug: profile.detection,
     checks,
     warnings,
     failures,
@@ -50,6 +55,12 @@ function auditRepo(cwd) {
 
 function printAudit(audit, options) {
   console.log("AgentKick doctor");
+  console.log("");
+  console.log(`Detected stack: ${audit.detectedStack}`);
+  if (audit.detectedCapabilities.length > 0) console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
+  if (audit.detectedStack === "generic") {
+    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+  }
   console.log("");
   console.log(`AI-readiness score: ${audit.score}/100`);
   console.log(`Status: ${audit.status}`);
@@ -69,6 +80,8 @@ function printAudit(audit, options) {
     console.log("Suggested fixes:");
     for (const suggestion of audit.suggestions) console.log(`- ${suggestion}`);
   }
+
+  if (options.debug) printDetectionDebug(audit.detectionDebug);
 }
 
 function requiredFile(cwd, relativePath, label) {
@@ -138,4 +151,26 @@ function readFileSafe(file) {
   } catch {
     return "";
   }
+}
+
+function printDetectionDebug(detection) {
+  console.log("");
+  console.log("Stack detection debug:");
+  console.log(`Current working directory: ${detection.cwd}`);
+  console.log("Files checked:");
+  printList(detection.filesChecked);
+  console.log("package.json dependencies found:");
+  printList(detection.dependencies);
+  console.log("Config files found:");
+  printList(detection.configFiles);
+  console.log("Final detection reasoning:");
+  printList(detection.reasoning);
+}
+
+function printList(items) {
+  if (!items || items.length === 0) {
+    console.log("- none");
+    return;
+  }
+  for (const item of items) console.log(`- ${item}`);
 }
