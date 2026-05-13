@@ -8,17 +8,28 @@ It is not another coding agent. It is a local-first repo layer for agent instruc
 
 ![AgentKick terminal demo](docs/assets/readme/agentkick-demo.gif)
 
+## Install
+
 ```bash
 npm install -g https://github.com/novatsingh/agentkick/archive/refs/heads/main.tar.gz
-agentkick init
-agentkick doctor
-agentkick focus
-agentkick summarize
 ```
 
 > npm package publishing is not live yet. Until the first npm release, install from the GitHub tarball instead of `npx agentkick`.
 
 Requires Node.js 20 or newer.
+
+## Quick Start
+
+Run this inside any repo:
+
+```bash
+agentkick init
+agentkick doctor
+agentkick focus auth
+agentkick summarize
+```
+
+That creates durable repo memory, checks AI workflow readiness, scopes a task, and prints a fresh-chat handoff summary.
 
 ## Why AgentKick Exists
 
@@ -193,7 +204,14 @@ Current generated repo layer:
 ```text
 AGENTS.md
 CLAUDE.md
+CURRENT_TASK.md
+ARCHITECTURE.md
+FEATURE_SUMMARIES.md
+WORKFLOW_RULES.md
+DECISIONS.md
+TASK_HISTORY.md
 .agentkick.json
+.agentkick/workflow-state.json
 .cursor/rules/*
 .github/copilot-instructions.md
 .github/instructions/*
@@ -204,7 +222,34 @@ CLAUDE.md
 .agents/skills/*
 ```
 
-The upcoming v1 workflow layer adds `.agentkick/memory/*` and `.agentkick/context/manifest.json`. See [Final MVP](docs/final-mvp/FINAL_MVP.md).
+These files are plain markdown and JSON so every change is visible in `git diff`.
+
+## Example Workflows
+
+Prepare an existing app:
+
+```bash
+agentkick init
+agentkick doctor --debug
+agentkick focus checkout
+```
+
+Start a new AI SaaS project:
+
+```bash
+agentkick new ai-saas myapp
+cd myapp
+npm install
+agentkick doctor
+```
+
+Reset a long agent thread:
+
+```bash
+agentkick summarize
+```
+
+Paste the fresh-chat summary into the next agent session.
 
 ## Templates
 

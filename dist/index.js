@@ -153,7 +153,7 @@ function hasAnyDependency(packageJson, dependencies) {
 }
 function packageDependencies(packageJson) {
   const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
-  const entries = sections.flatMap((section) => Object.keys(packageJson?.[section] ?? {}));
+  const entries = sections.flatMap((section2) => Object.keys(packageJson?.[section2] ?? {}));
   return new Set(entries);
 }
 function analyzeProject(cwd, packageJson) {
@@ -272,7 +272,7 @@ function analyzeProject(cwd, packageJson) {
     reasoning.push("generic: no supported stack markers were found");
     if (workspaceHints.length > 0) {
       reasoning.push(
-        `workspace: found project markers in child folders: ${workspaceHints.map((hint) => hint.path).join(", ")}`
+        `workspace: found project markers in child folders: ${workspaceHints.map((hint2) => hint2.path).join(", ")}`
       );
     }
   }
@@ -352,7 +352,7 @@ function findWorkspaceHints(cwd) {
   } catch {
     return [];
   }
-  return entries.filter((entry) => entry.isDirectory() && !ignored.has(entry.name)).map((entry) => childProjectHint(cwd, entry.name)).filter((hint) => Boolean(hint)).slice(0, 8);
+  return entries.filter((entry) => entry.isDirectory() && !ignored.has(entry.name)).map((entry) => childProjectHint(cwd, entry.name)).filter((hint2) => Boolean(hint2)).slice(0, 8);
 }
 function childProjectHint(cwd, name) {
   const child = path2.join(cwd, name);
@@ -440,18 +440,72 @@ var logger = {
     console.log(chalk.cyan(message));
   },
   success(message) {
-    console.log(chalk.green(message));
+    console.log(`${chalk.green("success")} ${message}`);
   },
   warn(message) {
-    console.log(chalk.yellow(message));
+    console.log(`${chalk.yellow("warning")} ${message}`);
   },
   error(message) {
-    console.error(chalk.red(message));
+    console.error(`${chalk.red("error")} ${message}`);
   },
   muted(message) {
     console.log(chalk.gray(message));
   }
 };
+function createSpinner(message) {
+  return ora({ text: message, spinner: "dots" });
+}
+
+// src/utils/ui.ts
+import chalk2 from "chalk";
+function header(title, subtitle) {
+  const lines = [chalk2.bold.cyan(title)];
+  if (subtitle) lines.push(chalk2.gray(subtitle));
+  return lines.join("\n");
+}
+function section(title) {
+  return chalk2.bold(title);
+}
+function bullet(value) {
+  return `${chalk2.gray("-")} ${value}`;
+}
+function keyValue(key, value) {
+  return `${chalk2.gray(`${key}:`)} ${value}`;
+}
+function command(value) {
+  return chalk2.cyan(value);
+}
+function pathLabel(value) {
+  return chalk2.cyan(value);
+}
+function status(value) {
+  if (value === "ready") return chalk2.green(value);
+  if (value === "blocked") return chalk2.red(value);
+  if (value === "needs-review") return chalk2.yellow(value);
+  return value;
+}
+function score(value) {
+  if (value >= 85) return chalk2.green(`${value}/100`);
+  if (value >= 65) return chalk2.yellow(`${value}/100`);
+  return chalk2.red(`${value}/100`);
+}
+function severity(value) {
+  if (value === "high") return chalk2.red(value);
+  if (value === "medium") return chalk2.yellow(value);
+  return chalk2.gray(value);
+}
+function checkStatus(ok) {
+  return ok ? chalk2.green("PASS") : chalk2.red("FAIL");
+}
+function nextSteps(steps) {
+  return [section("Next steps:"), ...steps.map((step) => `  ${command(step)}`)].join("\n");
+}
+function errorMessage(message) {
+  return `${chalk2.red("error")} ${message}`;
+}
+function hint(message) {
+  return `${chalk2.gray("hint")} ${message}`;
+}
 
 // src/workflow/packs.ts
 import path4 from "path";
@@ -667,48 +721,48 @@ async function buildWorkflowSummary(cwd, scope) {
 }
 function renderFocus(context) {
   const lines = [
-    "AgentKick focus",
+    header("AgentKick focus", "Scoped context for one task."),
     "",
-    `Scope: ${context.scope}`,
-    `Detected stack: ${context.profile.primaryStack ?? context.profile.template}`,
-    context.profile.capabilities?.length ? `Detected capabilities: ${context.profile.capabilities.join(", ")}` : "",
+    keyValue("Scope", context.scope),
+    keyValue("Detected stack", context.profile.primaryStack ?? context.profile.template),
+    context.profile.capabilities?.length ? keyValue("Detected capabilities", context.profile.capabilities.join(", ")) : "",
     "",
-    "Load first:",
-    ...context.loadFirst.map((file2) => `- ${file2}`),
+    section("Load first:"),
+    ...context.loadFirst.map((file2) => bullet(pathLabel(file2))),
     "",
-    "Scoped files:",
-    ...context.scopedFiles.length > 0 ? context.scopedFiles.map((file2) => `- ${file2.path} (${file2.reason})`) : ["- No scoped source files found. Start from the memory files above."],
+    section("Scoped files:"),
+    ...context.scopedFiles.length > 0 ? context.scopedFiles.map((file2) => bullet(`${pathLabel(file2.path)} (${file2.reason})`)) : [bullet("No scoped source files found. Start from the memory files above.")],
     "",
-    "Execution boundaries:",
-    ...context.boundaries.map((boundary) => `- ${boundary}`),
+    section("Execution boundaries:"),
+    ...context.boundaries.map((boundary) => bullet(boundary)),
     "",
-    "Compressed memory:",
-    ...context.memory.map((item) => `- ${item}`),
+    section("Compressed memory:"),
+    ...context.memory.map((item) => bullet(item)),
     "",
-    "Working rule: load only the files above unless the code path proves another file is required."
+    command("Working rule: load only the files above unless the code path proves another file is required.")
   ];
   return lines.filter((line) => line !== "").join("\n");
 }
 function renderSummary(summary) {
   const lines = [
-    "AgentKick summary",
+    header("AgentKick summary", "Fresh-chat handoff for the current workflow state."),
     "",
-    `Project: ${summary.project}`,
-    summary.branch ? `Git branch: ${summary.branch}` : "",
-    `Scope: ${summary.scope}`,
-    `Stack: ${summary.stack}`,
-    summary.capabilities.length ? `Capabilities: ${summary.capabilities.join(", ")}` : "",
-    `Package manager: ${summary.packageManager}`,
-    `Test: ${summary.testCommand}`,
-    `Build: ${summary.buildCommand}`,
+    keyValue("Project", summary.project),
+    summary.branch ? keyValue("Git branch", summary.branch) : "",
+    keyValue("Scope", summary.scope),
+    keyValue("Stack", summary.stack),
+    summary.capabilities.length ? keyValue("Capabilities", summary.capabilities.join(", ")) : "",
+    keyValue("Package manager", summary.packageManager),
+    keyValue("Test", summary.testCommand),
+    keyValue("Build", summary.buildCommand),
     "",
-    "Scoped files:",
-    ...summary.scopedFiles.length > 0 ? summary.scopedFiles.map((file2) => `- ${file2.path} (${file2.lines} lines)`) : ["- None detected from current scope."],
+    section("Scoped files:"),
+    ...summary.scopedFiles.length > 0 ? summary.scopedFiles.map((file2) => bullet(`${pathLabel(file2.path)} (${file2.lines} lines)`)) : [bullet("None detected from current scope.")],
     "",
-    "Memory digest:",
-    ...summary.memory.map((item) => `- ${item}`),
+    section("Memory digest:"),
+    ...summary.memory.map((item) => bullet(item)),
     "",
-    "Fresh-chat summary:",
+    section("Fresh-chat summary:"),
     summary.freshChatSummary
   ];
   return lines.filter((line) => line !== "").join("\n");
@@ -794,27 +848,30 @@ function scanFiles(cwd) {
 function scoreFile(cwd, file2, terms) {
   const lowerPath = file2.path.toLowerCase();
   const reasons = [];
-  let score = 0;
+  let score2 = 0;
   for (const term of terms) {
     if (lowerPath.includes(term)) {
-      score += lowerPath.split("/").some((part) => part.includes(term)) ? 8 : 4;
+      score2 += lowerPath.split("/").some((part) => part.includes(term)) ? 8 : 4;
       reasons.push(`path matches "${term}"`);
     }
   }
-  if (score === 0 && terms.length > 0 && file2.lines < 900) {
+  if (score2 === 0 && terms.length > 0 && file2.lines < 900) {
     const content = readFileSafe(path3.join(cwd, file2.path)).toLowerCase();
     for (const term of terms) {
       if (content.includes(term)) {
-        score += 2;
+        score2 += 2;
         reasons.push(`content mentions "${term}"`);
         break;
       }
     }
   }
-  if (score > 0 && (lowerPath.includes("readme") || lowerPath.endsWith("route.ts") || lowerPath.endsWith("api.ts"))) {
-    score += 1;
+  if (score2 > 0 && (lowerPath.includes("readme") || lowerPath.endsWith("route.ts") || lowerPath.endsWith("api.ts"))) {
+    score2 += 1;
   }
-  return { file: file2, score, reasons: reasons.length > 0 ? reasons : ["near scope"] };
+  if (score2 > 0 && lowerPath.startsWith("src/")) score2 += 3;
+  if (score2 > 0 && lowerPath.startsWith("docs/")) score2 -= 8;
+  if (score2 > 0 && (lowerPath === "readme.md" || lowerPath === "changelog.md" || lowerPath === "claude.md")) score2 -= 3;
+  return { file: file2, score: score2, reasons: reasons.length > 0 ? reasons : ["near scope"] };
 }
 function memoryDigest(cwd) {
   return MEMORY_FILES.filter((file2) => fs3.existsSync(path3.join(cwd, file2))).map((file2) => {
@@ -851,7 +908,15 @@ function existing(cwd, files) {
   return files.filter((file2) => fs3.existsSync(path3.join(cwd, file2)));
 }
 function tokenize(value) {
-  return value.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length >= 2 && !["the", "and", "for", "with", "task", "current"].includes(part));
+  const terms = value.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length >= 2 && !["the", "and", "for", "with", "task", "current"].includes(part));
+  const aliases = {
+    cli: ["command", "commands", "commander", "program"],
+    auth: ["login", "session", "user", "account"],
+    api: ["route", "routes", "server", "service"],
+    workflow: ["workflows", "state", "task"],
+    workflows: ["workflow", "state", "task"]
+  };
+  return [...new Set(terms.flatMap((term) => [term, ...aliases[term] ?? []]))];
 }
 function readFileSafe(file2) {
   try {
@@ -911,7 +976,16 @@ function readmeFor(profile) {
 
 Generated with AgentKick.
 
-## AI-Agent Ready
+## Quick Start
+
+\`\`\`bash
+${installCommand(profile)}
+${profile.testCommand}
+agentkick doctor
+agentkick focus
+\`\`\`
+
+## AI Workflow Memory
 
 This repo includes:
 
@@ -937,10 +1011,21 @@ ${profile.testCommand}
 ${profile.buildCommand}
 \`\`\`
 
+## Example Workflow
+
+\`\`\`bash
+agentkick focus <feature-or-task>
+# make the smallest scoped change
+${profile.testCommand}
+agentkick summarize
+\`\`\`
+
 ## AgentKick
 
 \`\`\`bash
 agentkick doctor
+agentkick focus
+agentkick summarize
 agentkick add security
 \`\`\`
 `;
@@ -1262,24 +1347,30 @@ function stackNotes(profile) {
 function titleize(value) {
   return value.split(/[-_\s]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
+function installCommand(profile) {
+  if (profile.packageManager === "npm") return "npm install";
+  if (profile.packageManager === "pnpm") return "pnpm install";
+  if (profile.packageManager === "yarn") return "yarn install";
+  return "# install project dependencies";
+}
 
 // src/workflow/packs.ts
 var PACKS = {
   core(profile) {
     return [
-      command(
+      command2(
         "review",
         "Review the current changes like a senior engineer. Prioritize bugs, regressions, missing tests, security risks, and unclear behavior. Use file and line references where possible."
       ),
-      command(
+      command2(
         "write-tests",
         `Add or update tests for the current change. Use this project's documented test command: ${profile.testCommand}. If no test harness exists, explain the smallest practical test setup before adding dependencies.`
       ),
-      command(
+      command2(
         "fix-ci",
         "Inspect the failing CI or local command output, identify the smallest root-cause fix, apply it, and rerun the relevant verification command."
       ),
-      command(
+      command2(
         "explain-codebase",
         "Explain this codebase for a new maintainer. Cover entry points, important directories, commands, deploy path, and risk areas."
       ),
@@ -1291,7 +1382,7 @@ var PACKS = {
     ];
   },
   "chrome-extension": () => [
-    command(
+    command2(
       "chrome-extension-check",
       "Review the Chrome extension for manifest issues, popup sizing, service worker lifecycle bugs, unsafe permissions, content-script mistakes, and packaging readiness."
     ),
@@ -1302,7 +1393,7 @@ var PACKS = {
     )
   ],
   nextjs: () => [
-    command(
+    command2(
       "nextjs-audit",
       "Audit the Next.js app for routing, server/client component boundaries, accessibility, metadata, bundle risks, and build failures."
     ),
@@ -1313,14 +1404,14 @@ var PACKS = {
     )
   ],
   netlify: (profile) => [
-    command(
+    command2(
       "debug-netlify-deploy",
       "Debug the Netlify deploy path. Check netlify.toml, publish directory, build command, environment variables, redirects, and whether the deploy ran from the correct working directory."
     ),
     file("docs/launch-checklist.md", launchChecklist(profile))
   ],
   security: () => [
-    command(
+    command2(
       "security-scan",
       "Perform a practical security review. Focus on secrets, auth bypass, injection, dependency risks, unsafe MCP config, exposed admin surfaces, and user-data handling."
     ),
@@ -1331,7 +1422,7 @@ var PACKS = {
     )
   ],
   python: () => [
-    command(
+    command2(
       "python-api-check",
       "Review the Python API for dependency hygiene, route behavior, validation, error handling, test coverage, and production server readiness."
     ),
@@ -1342,7 +1433,7 @@ var PACKS = {
     )
   ],
   php: () => [
-    command(
+    command2(
       "php-laravel-check",
       "Review the PHP/Laravel app for routing, validation, migrations, auth, config caching, queue behavior, and test coverage."
     ),
@@ -1353,7 +1444,7 @@ var PACKS = {
     )
   ],
   go: () => [
-    command(
+    command2(
       "go-check",
       "Review the Go project for package layout, error handling, concurrency risks, CLI behavior, test coverage, and release readiness."
     ),
@@ -1364,7 +1455,7 @@ var PACKS = {
     )
   ],
   rust: () => [
-    command(
+    command2(
       "rust-check",
       "Review the Rust project for ownership issues, error handling, CLI behavior, unsafe code, tests, and release readiness."
     ),
@@ -1375,7 +1466,7 @@ var PACKS = {
     )
   ],
   electron: () => [
-    command(
+    command2(
       "electron-check",
       "Review the Electron app for main/preload/renderer boundaries, context isolation, IPC safety, packaging, auto-update risks, and desktop UX."
     ),
@@ -1407,7 +1498,7 @@ function writePack(cwd, pack, profile, options = {}) {
   }
   if (options.updateConfig !== false) updateAgentkickConfig(cwd, { addedPacks: [pack] });
 }
-function command(name, body) {
+function command2(name, body) {
   return { kind: "command", name, body };
 }
 function agent(name, description, body) {
@@ -1449,15 +1540,29 @@ function applyWriteMode(program, options = {}) {
   const globalOptions = program.opts();
   setWriteMode({ dryRun: Boolean(options.dryRun ?? globalOptions.dryRun) });
 }
+function isDryRun(program, options = {}) {
+  const globalOptions = program.opts();
+  return Boolean(options.dryRun ?? globalOptions.dryRun);
+}
 
 // src/commands/add.ts
 function registerAddCommand(program, context) {
-  program.command("add").description("Add an AgentKick command/skill pack.").argument("<pack>", `pack: ${SUPPORTED_PACKS.join(", ")}`).action((pack) => {
+  program.command("add").description("Add focused workflow instructions for a stack or concern.").argument("<pack>", `pack: ${SUPPORTED_PACKS.join(", ")}`).addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick add github
+  $ agentkick add security
+  $ agentkick add chrome-extension
+`
+  ).action((pack) => {
     applyWriteMode(program);
     if (!isPack2(pack)) throw new Error(`unknown pack "${pack}". Supported: ${SUPPORTED_PACKS.join(", ")}`);
     const profile = detectProject(context.cwd);
     writePack(context.cwd, pack, profile);
     logger.success(`Added ${pack} pack.`);
+    console.log(nextSteps(["git diff", "agentkick doctor"]));
   });
 }
 function isPack2(value) {
@@ -1540,10 +1645,10 @@ function auditRepo(cwd) {
   const highProblems = analysis.problems.filter((problem) => problem.severity === "high");
   const warnings = warningProblems.map(problemMessage);
   const failures = checks.filter((check) => !check.ok).map((check) => check.message);
-  const score = readinessScore(failures, analysis.problems);
+  const score2 = readinessScore(failures, analysis.problems);
   return {
-    score,
-    status: failures.length === 0 && score >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
+    score: score2,
+    status: failures.length === 0 && score2 >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
     detectedStack: profile.primaryStack ?? profile.template,
     detectedCapabilities: profile.capabilities ?? [],
     detectionDebug: profile.detection ?? {
@@ -1714,7 +1819,7 @@ function modularityProblems(cwd, sourceFiles) {
   const srcFiles = sourceFiles.filter((file2) => file2.relativePath.startsWith("src/"));
   const appFiles = sourceFiles.filter((file2) => file2.relativePath.startsWith("app/"));
   const topLevelSrcFiles = srcFiles.filter((file2) => file2.relativePath.split("/").length <= 2);
-  const hasFeatureBoundary = directoryExists2(cwd, "src/features") || directoryExists2(cwd, "features");
+  const hasFeatureBoundary = directoryExists2(cwd, "src/features") || directoryExists2(cwd, "features") || directoryExists2(cwd, "src/commands") && directoryExists2(cwd, "src/core") && directoryExists2(cwd, "src/workflow");
   const hasCoreBoundary = directoryExists2(cwd, "src/core") || directoryExists2(cwd, "core");
   if (sourceFiles.length >= 25 && !hasFeatureBoundary) {
     problems.push({
@@ -1859,37 +1964,37 @@ function readinessScore(failures, problems) {
   return Math.max(0, Math.min(100, 100 - failures.length * 9 - problemPenalty));
 }
 function printAudit(audit, options) {
-  console.log("AgentKick doctor");
+  console.log(header("AgentKick doctor", "AI workflow readiness for this repository."));
   console.log("");
-  console.log(`AI Readiness Score: ${audit.score}/100`);
-  console.log(`Status: ${audit.status}`);
+  console.log(`AI Readiness Score: ${score(audit.score)}`);
+  console.log(`Status: ${status(audit.status)}`);
   if (options.strict) console.log("Mode: strict");
   console.log("");
-  console.log("Detected stack:");
+  console.log(section("Detected stack:"));
   if (audit.detectedStack === "generic") {
-    console.log("- generic");
-    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    console.log(bullet("generic"));
+    console.log(command("Could not confidently detect stack. Run agentkick doctor --debug to see checked files."));
     printWorkspaceHints(audit.detectionDebug);
   } else {
-    for (const item of [audit.detectedStack, ...audit.detectedCapabilities]) console.log(`- ${item}`);
+    for (const item of [audit.detectedStack, ...audit.detectedCapabilities]) console.log(bullet(item));
   }
   console.log("");
   if (audit.problems.length > 0) {
-    console.log("Problems:");
+    console.log(section("Problems:"));
     for (const problem of audit.problems) {
       const file2 = problem.file ? ` (${problem.file})` : "";
-      console.log(`- [${problem.severity}] ${problem.title}${file2}`);
+      console.log(bullet(`[${severity(problem.severity)}] ${problem.title}${file2}`));
     }
     console.log("");
   }
-  console.log("Workflow checks:");
+  console.log(section("Workflow checks:"));
   for (const check of audit.checks) {
-    console.log(`${check.ok ? "PASS" : "FAIL"} ${check.label}: ${check.message}`);
+    console.log(`${checkStatus(check.ok)} ${check.label}: ${check.message}`);
   }
   if (audit.suggestions.length > 0) {
     console.log("");
-    console.log("Suggested fixes:");
-    for (const suggestion of audit.suggestions) console.log(`- ${suggestion}`);
+    console.log(section("Suggested fixes:"));
+    for (const suggestion of audit.suggestions) console.log(bullet(suggestion));
   }
   if (options.debug) {
     printDetectionDebug(audit.detectionDebug);
@@ -1943,7 +2048,7 @@ function slash2(value) {
 }
 function printDetectionDebug(detection) {
   console.log("");
-  console.log("Stack detection debug:");
+  console.log(section("Stack detection debug:"));
   console.log(`Current working directory: ${detection.cwd}`);
   console.log("Files checked:");
   printList(detection.filesChecked);
@@ -1956,7 +2061,7 @@ function printDetectionDebug(detection) {
 }
 function printWorkflowDebug(analysis) {
   console.log("");
-  console.log("Workflow analysis debug:");
+  console.log(section("Workflow analysis debug:"));
   console.log(`Files scanned: ${analysis.filesScanned}`);
   console.log(`Source files scanned: ${analysis.sourceFiles}`);
   console.log(`React files scanned: ${analysis.reactFiles}`);
@@ -1966,16 +2071,16 @@ function printWorkflowDebug(analysis) {
     return;
   }
   for (const file2 of analysis.largestFiles) {
-    console.log(`- ${file2.relativePath} (${file2.lines} lines, ${file2.bytes} bytes)`);
+    console.log(bullet(`${pathLabel(file2.relativePath)} (${file2.lines} lines, ${file2.bytes} bytes)`));
   }
 }
 function printWorkspaceHints(detection) {
   if (detection.workspaceHints.length === 0) return;
   console.log("");
-  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log(section("This looks like a workspace folder, not a single app repo."));
   console.log("Run AgentKick inside one project folder, for example:");
-  for (const hint of detection.workspaceHints.slice(0, 5)) {
-    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+  for (const hint2 of detection.workspaceHints.slice(0, 5)) {
+    console.log(`  ${command(`cd ${hint2.path}`)}  # ${hint2.stack}`);
   }
 }
 function printList(items) {
@@ -1983,59 +2088,98 @@ function printList(items) {
     console.log("- none");
     return;
   }
-  for (const item of items) console.log(`- ${item}`);
+  for (const item of items) console.log(bullet(item));
 }
 
 // src/commands/doctor.ts
 function registerDoctorCommand(program, context) {
-  program.command("doctor").description("Check AI workflow readiness and stack detection.").option("--strict", "exit non-zero when readiness is blocked or below threshold").option("--json", "print JSON output").option("--debug", "print stack detection reasoning").action((options) => {
+  program.command("doctor").description("Analyze repo readiness for AI-assisted development.").option("--strict", "exit non-zero when readiness is blocked or below threshold").option("--json", "print JSON output").option("--debug", "print stack detection reasoning").addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick doctor
+  $ agentkick doctor --debug
+  $ agentkick doctor --strict
+`
+  ).action((options) => {
     runDoctor(context.cwd, options);
   });
 }
 
 // src/commands/focus.ts
 function registerFocusCommand(program, context) {
-  program.command("focus").description("Print the minimal project context an agent should load before editing.").argument("[scope]", "optional feature, folder, or task scope").action((scope) => {
+  program.command("focus").description("Generate scoped task context and update workflow state.").argument("[scope]", "optional feature, folder, or task scope").addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick focus auth
+  $ agentkick focus checkout
+  $ agentkick focus "fix popup button"
+`
+  ).action((scope) => {
     console.log(renderFocus(buildFocusContext(context.cwd, scope)));
   });
 }
 
 // src/utils/format.ts
-import chalk2 from "chalk";
+import chalk3 from "chalk";
 function formatStack(profile) {
   return profile.primaryStack ?? profile.template ?? "generic";
 }
 function printDetectionSummary(profile) {
-  console.log(`Detected stack: ${chalk2.bold(formatStack(profile))}`);
+  console.log(`Detected stack: ${chalk3.bold(formatStack(profile))}`);
   if (profile.capabilities?.length) {
     console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
   }
   if (formatStack(profile) === "generic") {
-    console.log(chalk2.yellow("Could not confidently detect stack. Run agentkick doctor --debug to see checked files."));
+    console.log(chalk3.yellow("Could not confidently detect stack. Run agentkick doctor --debug to see checked files."));
     printWorkspaceHints2(profile.detection?.workspaceHints ?? []);
   }
 }
 function printWorkspaceHints2(hints) {
   if (hints.length === 0) return;
   console.log("");
-  console.log(chalk2.yellow("This looks like a workspace folder, not a single app repo."));
+  console.log(chalk3.yellow("This looks like a workspace folder, not a single app repo."));
   console.log("Run AgentKick inside one project folder, for example:");
-  for (const hint of hints.slice(0, 5)) {
-    console.log(`  ${chalk2.cyan(`cd ${hint.path}`)}  ${chalk2.gray(`# ${hint.stack}`)}`);
+  for (const hint2 of hints.slice(0, 5)) {
+    console.log(`  ${chalk3.cyan(`cd ${hint2.path}`)}  ${chalk3.gray(`# ${hint2.stack}`)}`);
   }
 }
 
 // src/commands/init.ts
 function registerInitCommand(program, context) {
-  program.command("init").description("Initialize AgentKick memory, agent instructions, and repo workflow files.").option("--dry-run", "show file operations without writing").action((options) => {
+  program.command("init").description("Initialize workflow memory and agent instructions in the current repo.").option("--dry-run", "show file operations without writing").addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick init
+  $ agentkick init --dry-run
+`
+  ).action((options) => {
     applyWriteMode(program, options);
     const profile = detectProject(context.cwd);
-    writeAgentFiles(context.cwd, profile);
-    writeInitialWorkflowState(context.cwd, profile);
-    writePack(context.cwd, "core", profile);
-    logger.success(`Initialized AI-agent setup for ${profile.name}.`);
+    const spinner = isDryRun(program, options) ? null : createSpinner("Writing workflow memory").start();
+    try {
+      writeAgentFiles(context.cwd, profile);
+      writeInitialWorkflowState(context.cwd, profile);
+      writePack(context.cwd, "core", profile);
+      spinner?.succeed("Workflow memory written");
+    } catch (error) {
+      spinner?.fail("Initialization failed");
+      throw error;
+    }
+    console.log(header("AgentKick initialized", "Workflow memory is now repo-native."));
+    console.log("");
+    logger.success(`initialized ${profile.name}`);
+    console.log(keyValue("Project", profile.name));
+    console.log(keyValue("Package manager", profile.packageManager));
     if (options.dryRun) logger.muted("Dry run only. No files were written.");
     printDetectionSummary(profile);
+    console.log("");
+    console.log(nextSteps(["agentkick doctor", "agentkick focus <scope>", "agentkick summarize"]));
   });
 }
 
@@ -2043,6 +2187,7 @@ function registerInitCommand(program, context) {
 import fs5 from "fs";
 import path6 from "path";
 import { input, select } from "@inquirer/prompts";
+import { z } from "zod";
 
 // src/templates/project-templates.ts
 var TEMPLATE_REGISTRY = {
@@ -2926,12 +3071,23 @@ function titleize2(value) {
 }
 
 // src/commands/new.ts
+var ProjectNameSchema = z.string().min(1, "project name is required").regex(/^[a-z0-9._-]+$/, "project name may only contain lowercase letters, numbers, dots, underscores, and dashes").refine((value) => value !== "." && value !== "..", "project name cannot be . or ..");
 function registerNewCommand(program, context) {
-  program.command("new").description("Create a new agent-ready project from a supported template.").argument("[template]", `template: ${SUPPORTED_TEMPLATES.join(", ")}`).argument("[project-name]", "project folder name").action(async (template, projectName) => {
+  program.command("new").description("Create an AI-workflow-ready project from a template.").argument("[template]", `template: ${SUPPORTED_TEMPLATES.join(", ")}`).argument("[project-name]", "project folder name").addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick new ai-saas myapp
+  $ agentkick new chrome-extension browser-helper
+  $ agentkick new marketplace vendorhub
+`
+  ).action(async (template, projectName) => {
     applyWriteMode(program);
     const resolvedTemplate = await resolveTemplate(template);
     const resolvedName = sanitizeProjectName(projectName ?? await input({ message: "Project name:" }));
-    if (!resolvedName) throw new Error("project name is required");
+    const validation = ProjectNameSchema.safeParse(resolvedName);
+    if (!validation.success) throw new Error(validation.error.issues[0]?.message ?? "invalid project name");
     const projectDir = path6.resolve(context.cwd, resolvedName);
     if (fs5.existsSync(projectDir)) throw new Error(`target folder already exists: ${projectDir}`);
     const defaultPacks = defaultPacksForTemplate(resolvedTemplate);
@@ -2939,14 +3095,24 @@ function registerNewCommand(program, context) {
       ...buildProfile(resolvedTemplate, resolvedName),
       packs: ["core", ...defaultPacks]
     };
-    writeTemplateProject(projectDir, profile);
-    writeAgentFiles(projectDir, profile, { includeWorkflowMemory: false });
-    writePack(projectDir, "core", profile, { updateConfig: false });
-    for (const pack of defaultPacks) writePack(projectDir, pack, profile, { updateConfig: false });
-    logger.success(`Created ${resolvedName} using ${resolvedTemplate}.`);
-    console.log("Next steps:");
-    console.log(`  cd ${resolvedName}`);
-    for (const step of postInstallStepsFor(resolvedTemplate)) console.log(`  ${step}`);
+    const spinner = isDryRun(program) ? null : createSpinner("Generating project files").start();
+    try {
+      writeTemplateProject(projectDir, profile);
+      writeAgentFiles(projectDir, profile, { includeWorkflowMemory: false });
+      writePack(projectDir, "core", profile, { updateConfig: false });
+      for (const pack of defaultPacks) writePack(projectDir, pack, profile, { updateConfig: false });
+      spinner?.succeed("Project files generated");
+    } catch (error) {
+      spinner?.fail("Project generation failed");
+      throw error;
+    }
+    console.log(header("AgentKick project created", "AI workflow memory and agent instructions are ready."));
+    console.log("");
+    logger.success(`${resolvedName} created`);
+    console.log(keyValue("Template", resolvedTemplate));
+    console.log(keyValue("Location", pathLabel(projectDir)));
+    console.log("");
+    console.log(nextSteps([`cd ${resolvedName}`, ...postInstallStepsFor(resolvedTemplate)]));
   });
 }
 async function resolveTemplate(template) {
@@ -2970,7 +3136,15 @@ function normalizeTemplate(value) {
 
 // src/commands/summarize.ts
 function registerSummarizeCommand(program, context) {
-  program.command("summarize").description("Summarize the current repo for handoff or thread reset.").argument("[scope]", "optional feature, folder, or task scope").action(async (scope) => {
+  program.command("summarize").description("Compress workflow state for handoff or a fresh chat.").argument("[scope]", "optional feature, folder, or task scope").addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick summarize
+  $ agentkick summarize auth
+`
+  ).action(async (scope) => {
     console.log(renderSummary(await buildWorkflowSummary(context.cwd, scope)));
   });
 }
@@ -2989,7 +3163,24 @@ function registerCommands(program, context) {
 function createProgram(cwd = process2.cwd()) {
   const program = new Command();
   const context = { cwd };
-  program.name("agentkick").description("Workflow infrastructure for AI-assisted software development.").version(VERSION, "-v, --version").option("--dry-run", "show file operations without writing");
+  program.name("agentkick").description("Repo-native workflow memory for AI-assisted development.").version(VERSION, "-v, --version").option("--dry-run", "show file operations without writing").showHelpAfterError().showSuggestionAfterError().addHelpText(
+    "after",
+    `
+
+Examples:
+  $ agentkick init
+  $ agentkick doctor --debug
+  $ agentkick focus auth
+  $ agentkick summarize
+  $ agentkick new ai-saas myapp
+
+Workflow:
+  init       write repo memory and agent instructions
+  doctor     check AI workflow readiness
+  focus      create scoped task context
+  summarize  compress current state for a fresh chat
+`
+  );
   registerCommands(program, context);
   return program;
 }
@@ -3001,7 +3192,17 @@ async function run(argv, cwd = process2.cwd()) {
 // src/index.ts
 run(process.argv.slice(2)).catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`agentkick failed: ${message}`);
+  console.error(errorMessage(message));
+  const suggestion = suggestionFor(message);
+  if (suggestion) console.error(hint(suggestion));
   process.exitCode = 1;
 });
+function suggestionFor(message) {
+  if (message.includes("unknown template")) return "Run agentkick new --help to see supported project templates.";
+  if (message.includes("unknown pack")) return "Run agentkick add --help to see supported workflow packs.";
+  if (message.includes("target folder already exists"))
+    return "Choose a new project name or remove the existing folder.";
+  if (message.includes("project name is required")) return "Run agentkick new <template> <project-name>.";
+  return "Run agentkick --help for available commands.";
+}
 //# sourceMappingURL=index.js.map

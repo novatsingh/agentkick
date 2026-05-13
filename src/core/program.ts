@@ -13,9 +13,29 @@ export function createProgram(cwd = process.cwd()) {
 
   program
     .name("agentkick")
-    .description("Workflow infrastructure for AI-assisted software development.")
+    .description("Repo-native workflow memory for AI-assisted development.")
     .version(VERSION, "-v, --version")
-    .option("--dry-run", "show file operations without writing");
+    .option("--dry-run", "show file operations without writing")
+    .showHelpAfterError()
+    .showSuggestionAfterError()
+    .addHelpText(
+      "after",
+      `
+
+Examples:
+  $ agentkick init
+  $ agentkick doctor --debug
+  $ agentkick focus auth
+  $ agentkick summarize
+  $ agentkick new ai-saas myapp
+
+Workflow:
+  init       write repo memory and agent instructions
+  doctor     check AI workflow readiness
+  focus      create scoped task context
+  summarize  compress current state for a fresh chat
+`
+    );
 
   registerCommands(program, context);
   return program;

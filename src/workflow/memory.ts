@@ -4,6 +4,7 @@ import { detectProject } from "../detectors/project-detector.js";
 import type { ProjectProfile } from "../core/types.js";
 import { json, readJsonSafe, writeFile } from "../utils/fs.js";
 import { gitBranch } from "../utils/git.js";
+import { bullet, command, header, keyValue, pathLabel, section } from "../utils/ui.js";
 
 type ScopedFile = {
   path: string;
@@ -225,53 +226,55 @@ export async function buildWorkflowSummary(cwd: string, scope?: string) {
 
 export function renderFocus(context: ReturnType<typeof buildFocusContext>) {
   const lines = [
-    "AgentKick focus",
+    header("AgentKick focus", "Scoped context for one task."),
     "",
-    `Scope: ${context.scope}`,
-    `Detected stack: ${context.profile.primaryStack ?? context.profile.template}`,
-    context.profile.capabilities?.length ? `Detected capabilities: ${context.profile.capabilities.join(", ")}` : "",
+    keyValue("Scope", context.scope),
+    keyValue("Detected stack", context.profile.primaryStack ?? context.profile.template),
+    context.profile.capabilities?.length
+      ? keyValue("Detected capabilities", context.profile.capabilities.join(", "))
+      : "",
     "",
-    "Load first:",
-    ...context.loadFirst.map((file) => `- ${file}`),
+    section("Load first:"),
+    ...context.loadFirst.map((file) => bullet(pathLabel(file))),
     "",
-    "Scoped files:",
+    section("Scoped files:"),
     ...(context.scopedFiles.length > 0
-      ? context.scopedFiles.map((file) => `- ${file.path} (${file.reason})`)
-      : ["- No scoped source files found. Start from the memory files above."]),
+      ? context.scopedFiles.map((file) => bullet(`${pathLabel(file.path)} (${file.reason})`))
+      : [bullet("No scoped source files found. Start from the memory files above.")]),
     "",
-    "Execution boundaries:",
-    ...context.boundaries.map((boundary) => `- ${boundary}`),
+    section("Execution boundaries:"),
+    ...context.boundaries.map((boundary) => bullet(boundary)),
     "",
-    "Compressed memory:",
-    ...context.memory.map((item) => `- ${item}`),
+    section("Compressed memory:"),
+    ...context.memory.map((item) => bullet(item)),
     "",
-    "Working rule: load only the files above unless the code path proves another file is required."
+    command("Working rule: load only the files above unless the code path proves another file is required.")
   ];
   return lines.filter((line) => line !== "").join("\n");
 }
 
 export function renderSummary(summary: Awaited<ReturnType<typeof buildWorkflowSummary>>) {
   const lines = [
-    "AgentKick summary",
+    header("AgentKick summary", "Fresh-chat handoff for the current workflow state."),
     "",
-    `Project: ${summary.project}`,
-    summary.branch ? `Git branch: ${summary.branch}` : "",
-    `Scope: ${summary.scope}`,
-    `Stack: ${summary.stack}`,
-    summary.capabilities.length ? `Capabilities: ${summary.capabilities.join(", ")}` : "",
-    `Package manager: ${summary.packageManager}`,
-    `Test: ${summary.testCommand}`,
-    `Build: ${summary.buildCommand}`,
+    keyValue("Project", summary.project),
+    summary.branch ? keyValue("Git branch", summary.branch) : "",
+    keyValue("Scope", summary.scope),
+    keyValue("Stack", summary.stack),
+    summary.capabilities.length ? keyValue("Capabilities", summary.capabilities.join(", ")) : "",
+    keyValue("Package manager", summary.packageManager),
+    keyValue("Test", summary.testCommand),
+    keyValue("Build", summary.buildCommand),
     "",
-    "Scoped files:",
+    section("Scoped files:"),
     ...(summary.scopedFiles.length > 0
-      ? summary.scopedFiles.map((file) => `- ${file.path} (${file.lines} lines)`)
-      : ["- None detected from current scope."]),
+      ? summary.scopedFiles.map((file) => bullet(`${pathLabel(file.path)} (${file.lines} lines)`))
+      : [bullet("None detected from current scope.")]),
     "",
-    "Memory digest:",
-    ...summary.memory.map((item) => `- ${item}`),
+    section("Memory digest:"),
+    ...summary.memory.map((item) => bullet(item)),
     "",
-    "Fresh-chat summary:",
+    section("Fresh-chat summary:"),
     summary.freshChatSummary
   ];
   return lines.filter((line) => line !== "").join("\n");
@@ -394,6 +397,9 @@ function scoreFile(cwd: string, file: Omit<ScopedFile, "reason">, terms: string[
   if (score > 0 && (lowerPath.includes("readme") || lowerPath.endsWith("route.ts") || lowerPath.endsWith("api.ts"))) {
     score += 1;
   }
+  if (score > 0 && lowerPath.startsWith("src/")) score += 3;
+  if (score > 0 && lowerPath.startsWith("docs/")) score -= 8;
+  if (score > 0 && (lowerPath === "readme.md" || lowerPath === "changelog.md" || lowerPath === "claude.md")) score -= 3;
   return { file, score, reasons: reasons.length > 0 ? reasons : ["near scope"] };
 }
 
@@ -442,10 +448,18 @@ function existing(cwd: string, files: string[]) {
 }
 
 function tokenize(value: string) {
-  return value
+  const terms = value
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((part) => part.length >= 2 && !["the", "and", "for", "with", "task", "current"].includes(part));
+  const aliases: Record<string, string[]> = {
+    cli: ["command", "commands", "commander", "program"],
+    auth: ["login", "session", "user", "account"],
+    api: ["route", "routes", "server", "service"],
+    workflow: ["workflows", "state", "task"],
+    workflows: ["workflow", "state", "task"]
+  };
+  return [...new Set(terms.flatMap((term) => [term, ...(aliases[term] ?? [])]))];
 }
 
 function readFileSafe(file: string) {

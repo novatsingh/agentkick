@@ -3,6 +3,7 @@ import path from "node:path";
 import { readJsonSafe } from "../utils/fs.js";
 import { detectProject } from "../detectors/project-detector.js";
 import type { DetectionDebug, DoctorOptions, DoctorProblem, PackageJson } from "../core/types.js";
+import { bullet, checkStatus, command, header, pathLabel, score, section, severity, status } from "../utils/ui.js";
 
 type DoctorCheck = { ok: boolean; label: string; message: string };
 
@@ -311,7 +312,10 @@ function modularityProblems(cwd: string, sourceFiles: RepoFile[]): DoctorProblem
   const srcFiles = sourceFiles.filter((file) => file.relativePath.startsWith("src/"));
   const appFiles = sourceFiles.filter((file) => file.relativePath.startsWith("app/"));
   const topLevelSrcFiles = srcFiles.filter((file) => file.relativePath.split("/").length <= 2);
-  const hasFeatureBoundary = directoryExists(cwd, "src/features") || directoryExists(cwd, "features");
+  const hasFeatureBoundary =
+    directoryExists(cwd, "src/features") ||
+    directoryExists(cwd, "features") ||
+    (directoryExists(cwd, "src/commands") && directoryExists(cwd, "src/core") && directoryExists(cwd, "src/workflow"));
   const hasCoreBoundary = directoryExists(cwd, "src/core") || directoryExists(cwd, "core");
 
   if (sourceFiles.length >= 25 && !hasFeatureBoundary) {
@@ -471,40 +475,40 @@ function readinessScore(failures: string[], problems: DoctorProblem[]) {
 }
 
 function printAudit(audit: DoctorAudit, options: DoctorOptions) {
-  console.log("AgentKick doctor");
+  console.log(header("AgentKick doctor", "AI workflow readiness for this repository."));
   console.log("");
-  console.log(`AI Readiness Score: ${audit.score}/100`);
-  console.log(`Status: ${audit.status}`);
+  console.log(`AI Readiness Score: ${score(audit.score)}`);
+  console.log(`Status: ${status(audit.status)}`);
   if (options.strict) console.log("Mode: strict");
   console.log("");
-  console.log("Detected stack:");
+  console.log(section("Detected stack:"));
   if (audit.detectedStack === "generic") {
-    console.log("- generic");
-    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    console.log(bullet("generic"));
+    console.log(command("Could not confidently detect stack. Run agentkick doctor --debug to see checked files."));
     printWorkspaceHints(audit.detectionDebug);
   } else {
-    for (const item of [audit.detectedStack, ...audit.detectedCapabilities]) console.log(`- ${item}`);
+    for (const item of [audit.detectedStack, ...audit.detectedCapabilities]) console.log(bullet(item));
   }
   console.log("");
 
   if (audit.problems.length > 0) {
-    console.log("Problems:");
+    console.log(section("Problems:"));
     for (const problem of audit.problems) {
       const file = problem.file ? ` (${problem.file})` : "";
-      console.log(`- [${problem.severity}] ${problem.title}${file}`);
+      console.log(bullet(`[${severity(problem.severity)}] ${problem.title}${file}`));
     }
     console.log("");
   }
 
-  console.log("Workflow checks:");
+  console.log(section("Workflow checks:"));
   for (const check of audit.checks) {
-    console.log(`${check.ok ? "PASS" : "FAIL"} ${check.label}: ${check.message}`);
+    console.log(`${checkStatus(check.ok)} ${check.label}: ${check.message}`);
   }
 
   if (audit.suggestions.length > 0) {
     console.log("");
-    console.log("Suggested fixes:");
-    for (const suggestion of audit.suggestions) console.log(`- ${suggestion}`);
+    console.log(section("Suggested fixes:"));
+    for (const suggestion of audit.suggestions) console.log(bullet(suggestion));
   }
 
   if (options.debug) {
@@ -568,7 +572,7 @@ function slash(value: string) {
 
 function printDetectionDebug(detection: DetectionDebug) {
   console.log("");
-  console.log("Stack detection debug:");
+  console.log(section("Stack detection debug:"));
   console.log(`Current working directory: ${detection.cwd}`);
   console.log("Files checked:");
   printList(detection.filesChecked);
@@ -582,7 +586,7 @@ function printDetectionDebug(detection: DetectionDebug) {
 
 function printWorkflowDebug(analysis: WorkflowAnalysis) {
   console.log("");
-  console.log("Workflow analysis debug:");
+  console.log(section("Workflow analysis debug:"));
   console.log(`Files scanned: ${analysis.filesScanned}`);
   console.log(`Source files scanned: ${analysis.sourceFiles}`);
   console.log(`React files scanned: ${analysis.reactFiles}`);
@@ -592,7 +596,7 @@ function printWorkflowDebug(analysis: WorkflowAnalysis) {
     return;
   }
   for (const file of analysis.largestFiles) {
-    console.log(`- ${file.relativePath} (${file.lines} lines, ${file.bytes} bytes)`);
+    console.log(bullet(`${pathLabel(file.relativePath)} (${file.lines} lines, ${file.bytes} bytes)`));
   }
 }
 
@@ -600,10 +604,10 @@ function printWorkspaceHints(detection: DetectionDebug) {
   if (detection.workspaceHints.length === 0) return;
 
   console.log("");
-  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log(section("This looks like a workspace folder, not a single app repo."));
   console.log("Run AgentKick inside one project folder, for example:");
   for (const hint of detection.workspaceHints.slice(0, 5)) {
-    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+    console.log(`  ${command(`cd ${hint.path}`)}  # ${hint.stack}`);
   }
 }
 
@@ -612,5 +616,5 @@ function printList(items: string[]) {
     console.log("- none");
     return;
   }
-  for (const item of items) console.log(`- ${item}`);
+  for (const item of items) console.log(bullet(item));
 }

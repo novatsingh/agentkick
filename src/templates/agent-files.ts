@@ -42,7 +42,16 @@ export function readmeFor(profile: ProjectProfile) {
 
 Generated with AgentKick.
 
-## AI-Agent Ready
+## Quick Start
+
+\`\`\`bash
+${installCommand(profile)}
+${profile.testCommand}
+agentkick doctor
+agentkick focus
+\`\`\`
+
+## AI Workflow Memory
 
 This repo includes:
 
@@ -68,10 +77,21 @@ ${profile.testCommand}
 ${profile.buildCommand}
 \`\`\`
 
+## Example Workflow
+
+\`\`\`bash
+agentkick focus <feature-or-task>
+# make the smallest scoped change
+${profile.testCommand}
+agentkick summarize
+\`\`\`
+
 ## AgentKick
 
 \`\`\`bash
 agentkick doctor
+agentkick focus
+agentkick summarize
 agentkick add security
 \`\`\`
 `;
@@ -413,4 +433,11 @@ function titleize(value: string) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function installCommand(profile: ProjectProfile) {
+  if (profile.packageManager === "npm") return "npm install";
+  if (profile.packageManager === "pnpm") return "pnpm install";
+  if (profile.packageManager === "yarn") return "yarn install";
+  return "# install project dependencies";
 }

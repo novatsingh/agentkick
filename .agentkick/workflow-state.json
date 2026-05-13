@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "project": "agentkick",
+  "activeScope": "none",
+  "updatedAt": "2026-05-13T10:27:26.113Z",
+  "stack": [
+    "nodejs",
+    "node-cli"
+  ],
+  "scopedFiles": []
+}

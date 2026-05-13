@@ -6,13 +6,13 @@ export const logger = {
     console.log(chalk.cyan(message));
   },
   success(message: string) {
-    console.log(chalk.green(message));
+    console.log(`${chalk.green("success")} ${message}`);
   },
   warn(message: string) {
-    console.log(chalk.yellow(message));
+    console.log(`${chalk.yellow("warning")} ${message}`);
   },
   error(message: string) {
-    console.error(chalk.red(message));
+    console.error(`${chalk.red("error")} ${message}`);
   },
   muted(message: string) {
     console.log(chalk.gray(message));
