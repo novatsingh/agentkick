@@ -52,11 +52,7 @@ AgentKick is an AI workflow operating system for software repositories. These do
 - [Package Breakdown](productization/PACKAGE_BREAKDOWN.md)
 - [Plugin System](productization/PLUGIN_SYSTEM.md)
 - [Version Roadmap](productization/VERSION_ROADMAP.md)
-- [Open Source Strategy](productization/OPEN_SOURCE_STRATEGY.md)
-- [Market Positioning](productization/MARKET_POSITIONING.md)
 - [Differentiation](productization/DIFFERENTIATION.md)
-- [Future SaaS Plan](productization/FUTURE_SAAS_PLAN.md)
-- [Virality Strategy](productization/VIRALITY_STRATEGY.md)
 - [README Structure](productization/README_STRUCTURE.md)
 
 ## Architecture Audit
@@ -80,13 +76,9 @@ AgentKick is an AI workflow operating system for software repositories. These do
 
 - [Final MVP](final-mvp/FINAL_MVP.md)
 - [Implementation Phases](final-mvp/IMPLEMENTATION_PHASES.md)
-- [First 30 Days](final-mvp/FIRST_30_DAYS.md)
 - [Tech Stack Final](final-mvp/TECH_STACK_FINAL.md)
 - [CLI Execution Plan](final-mvp/CLI_EXECUTION_PLAN.md)
 - [README Final Structure](final-mvp/README_FINAL_STRUCTURE.md)
-- [Launch Checklist](final-mvp/LAUNCH_CHECKLIST.md)
-- [Viral Features](final-mvp/VIRAL_FEATURES.md)
-- [OSS Growth Strategy](final-mvp/OSS_GROWTH_STRATEGY.md)
 - [Developer Experience Rules](final-mvp/DEVELOPER_EXPERIENCE_RULES.md)
 
 ## Product Boundary
