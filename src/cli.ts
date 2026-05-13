@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import readline from "node:readline/promises";
+import readline from "node:readline";
 import { Command } from "commander";
 import { writeAgentFiles } from "./agent-files.js";
 import { SUPPORTED_PACKS, SUPPORTED_TEMPLATES, VERSION } from "./constants.js";
@@ -185,15 +185,21 @@ async function promptForNewProject(defaults: { template?: string; projectName?: 
     SUPPORTED_TEMPLATES.forEach((item, index) => console.log(`  ${index + 1}. ${item}`));
     console.log("");
 
-    const templateAnswer = defaults.template ?? (await rl.question("Project type [1]: "));
+    const templateAnswer = defaults.template ?? (await askQuestion(rl, "Project type [1]: "));
     const template = resolveTemplateAnswer(templateAnswer || "1");
-    const nameAnswer = defaults.projectName ?? (await rl.question("Project name: "));
+    const nameAnswer = defaults.projectName ?? (await askQuestion(rl, "Project name: "));
     const projectName = sanitizeProjectName(nameAnswer);
     if (!projectName) throw new Error("project name is required");
     return { template, projectName };
   } finally {
     rl.close();
   }
+}
+
+function askQuestion(rl: readline.Interface, prompt: string) {
+  return new Promise<string>((resolve) => {
+    rl.question(prompt, resolve);
+  });
 }
 
 function resolveTemplateAnswer(answer: string): Template {

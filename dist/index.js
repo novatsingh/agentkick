@@ -4,7 +4,7 @@
 import fs4 from "fs";
 import path5 from "path";
 import process2 from "process";
-import readline from "readline/promises";
+import readline from "readline";
 import { Command } from "commander";
 
 // src/fs-utils.ts
@@ -1754,15 +1754,20 @@ async function promptForNewProject(defaults) {
     console.log("AgentKick project setup\n");
     SUPPORTED_TEMPLATES.forEach((item, index) => console.log(`  ${index + 1}. ${item}`));
     console.log("");
-    const templateAnswer = defaults.template ?? await rl.question("Project type [1]: ");
+    const templateAnswer = defaults.template ?? await askQuestion(rl, "Project type [1]: ");
     const template = resolveTemplateAnswer(templateAnswer || "1");
-    const nameAnswer = defaults.projectName ?? await rl.question("Project name: ");
+    const nameAnswer = defaults.projectName ?? await askQuestion(rl, "Project name: ");
     const projectName = sanitizeProjectName(nameAnswer);
     if (!projectName) throw new Error("project name is required");
     return { template, projectName };
   } finally {
     rl.close();
   }
+}
+function askQuestion(rl, prompt) {
+  return new Promise((resolve) => {
+    rl.question(prompt, resolve);
+  });
 }
 function resolveTemplateAnswer(answer) {
   const normalized = String(answer).trim();
