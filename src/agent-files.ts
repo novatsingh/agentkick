@@ -1,6 +1,7 @@
 import { json, writeFile } from "./fs-utils.js";
+import type { ProjectProfile } from "./types.js";
 
-export function writeAgentFiles(cwd, profile) {
+export function writeAgentFiles(cwd: string, profile: ProjectProfile) {
   writeFile(cwd, "AGENTS.md", agentsMd(profile));
   writeFile(cwd, "CLAUDE.md", claudeMd(profile));
   writeFile(cwd, ".github/copilot-instructions.md", copilotInstructions(profile));
@@ -9,24 +10,28 @@ export function writeAgentFiles(cwd, profile) {
   writeGenericSkills(cwd, profile);
   writeCodexAgents(cwd, profile);
   writeFile(cwd, ".cursor/rules/agentkick.mdc", cursorRules(profile));
-  writeFile(cwd, ".agentkick.json", json({
-    schemaVersion: 1,
-    name: profile.name,
-    stack: profile.stack,
-    packageManager: profile.packageManager,
-    testCommand: profile.testCommand,
-    buildCommand: profile.buildCommand,
-    launchTarget: profile.launchTarget,
-    packs: profile.packs ?? ["core"],
-    safety: {
-      preserveBackups: true,
-      mcpFilesystemScope: "repo",
-      destructiveActionsRequireApproval: true
-    }
-  }));
+  writeFile(
+    cwd,
+    ".agentkick.json",
+    json({
+      schemaVersion: 1,
+      name: profile.name,
+      stack: profile.stack,
+      packageManager: profile.packageManager,
+      testCommand: profile.testCommand,
+      buildCommand: profile.buildCommand,
+      launchTarget: profile.launchTarget,
+      packs: profile.packs ?? ["core"],
+      safety: {
+        preserveBackups: true,
+        mcpFilesystemScope: "repo",
+        destructiveActionsRequireApproval: true
+      }
+    })
+  );
 }
 
-export function readmeFor(profile) {
+export function readmeFor(profile: ProjectProfile) {
   return `# ${titleize(profile.name)}
 
 Generated with AgentKick.
@@ -62,7 +67,7 @@ agentkick add security
 `;
 }
 
-export function launchChecklist(profile) {
+export function launchChecklist(profile: ProjectProfile) {
   return `# Launch Checklist
 
 - Confirm the product promise is clear in README or landing page.
@@ -75,7 +80,7 @@ export function launchChecklist(profile) {
 `;
 }
 
-function agentsMd(profile) {
+function agentsMd(profile: ProjectProfile) {
   return `# AGENTS.md
 
 ## Project
@@ -126,11 +131,13 @@ This repository must be understandable by autonomous coding agents before they m
 
 ## Stack Notes
 
-${stackNotes(profile).map((note) => `- ${note}`).join("\n")}
+${stackNotes(profile)
+  .map((note) => `- ${note}`)
+  .join("\n")}
 `;
 }
 
-function claudeMd(profile) {
+function claudeMd(profile: ProjectProfile) {
   return `# CLAUDE.md
 
 This repository is configured for Claude Code.
@@ -161,7 +168,7 @@ This repository is configured for Claude Code.
 `;
 }
 
-function copilotInstructions(profile) {
+function copilotInstructions(profile: ProjectProfile) {
   return `# GitHub Copilot Instructions
 
 Follow the repository rules in \`AGENTS.md\`.
@@ -174,51 +181,106 @@ Follow the repository rules in \`AGENTS.md\`.
 `;
 }
 
-function writeGithubInstructions(cwd, profile) {
-  writeFile(cwd, ".github/instructions/frontend.instructions.md", githubInstruction("frontend", "**/*.{tsx,jsx,css,html}", [
-    "Preserve established design patterns unless the task asks for a redesign.",
-    "Keep UI accessible: semantic markup, labels, keyboard interaction, and readable contrast.",
-    "Do not move client-side secrets into frontend files."
-  ]));
-  writeFile(cwd, ".github/instructions/backend.instructions.md", githubInstruction("backend", "**/*.{js,ts,py,php,go,rs}", [
-    "Validate all external input before using it.",
-    "Keep auth, billing, permission, and database changes explicit and reviewable.",
-    `Verify behavior with ${profile.testCommand}.`
-  ]));
-  writeFile(cwd, ".github/instructions/typescript.instructions.md", githubInstruction("typescript", "**/*.{ts,tsx}", [
-    "Avoid any unless the reason is documented at the use site.",
-    "Prefer explicit return types for exported functions.",
-    "Keep server/client boundaries strict."
-  ]));
-  writeFile(cwd, ".github/instructions/security.instructions.md", githubInstruction("security", "**/*", [
-    "Never commit secrets, tokens, private keys, or production credentials.",
-    "Treat broad shell, filesystem, and MCP access as high-risk.",
-    "Do not log sensitive user data."
-  ]));
+function writeGithubInstructions(cwd: string, profile: ProjectProfile) {
+  writeFile(
+    cwd,
+    ".github/instructions/frontend.instructions.md",
+    githubInstruction("frontend", "**/*.{tsx,jsx,css,html}", [
+      "Preserve established design patterns unless the task asks for a redesign.",
+      "Keep UI accessible: semantic markup, labels, keyboard interaction, and readable contrast.",
+      "Do not move client-side secrets into frontend files."
+    ])
+  );
+  writeFile(
+    cwd,
+    ".github/instructions/backend.instructions.md",
+    githubInstruction("backend", "**/*.{js,ts,py,php,go,rs}", [
+      "Validate all external input before using it.",
+      "Keep auth, billing, permission, and database changes explicit and reviewable.",
+      `Verify behavior with ${profile.testCommand}.`
+    ])
+  );
+  writeFile(
+    cwd,
+    ".github/instructions/typescript.instructions.md",
+    githubInstruction("typescript", "**/*.{ts,tsx}", [
+      "Avoid any unless the reason is documented at the use site.",
+      "Prefer explicit return types for exported functions.",
+      "Keep server/client boundaries strict."
+    ])
+  );
+  writeFile(
+    cwd,
+    ".github/instructions/security.instructions.md",
+    githubInstruction("security", "**/*", [
+      "Never commit secrets, tokens, private keys, or production credentials.",
+      "Treat broad shell, filesystem, and MCP access as high-risk.",
+      "Do not log sensitive user data."
+    ])
+  );
 }
 
-function writeClaudeSkills(cwd, profile) {
+function writeClaudeSkills(cwd: string, profile: ProjectProfile) {
   const skills = {
-    review: ["Inspect git diff or changed files.", "Check behavior, edge cases, tests, security, and deployment impact.", "Report risks first with file references.", "Avoid broad summaries until findings are complete."],
-    debug: ["Reproduce or identify the failing path.", "Find the smallest root cause.", "Patch only the relevant code path.", `Verify with ${profile.testCommand} or explain why it cannot run.`],
-    "write-tests": ["Identify behavior that can regress.", "Add focused tests before broad refactors.", "Prefer existing test style and helpers.", `Run ${profile.testCommand}.`],
-    "security-scan": ["Trace inputs to sensitive sinks.", "Check secrets, auth, permissions, injection, and MCP/tool access.", "Validate exploitability before assigning severity.", "Recommend concrete remediation."]
+    review: [
+      "Inspect git diff or changed files.",
+      "Check behavior, edge cases, tests, security, and deployment impact.",
+      "Report risks first with file references.",
+      "Avoid broad summaries until findings are complete."
+    ],
+    debug: [
+      "Reproduce or identify the failing path.",
+      "Find the smallest root cause.",
+      "Patch only the relevant code path.",
+      `Verify with ${profile.testCommand} or explain why it cannot run.`
+    ],
+    "write-tests": [
+      "Identify behavior that can regress.",
+      "Add focused tests before broad refactors.",
+      "Prefer existing test style and helpers.",
+      `Run ${profile.testCommand}.`
+    ],
+    "security-scan": [
+      "Trace inputs to sensitive sinks.",
+      "Check secrets, auth, permissions, injection, and MCP/tool access.",
+      "Validate exploitability before assigning severity.",
+      "Recommend concrete remediation."
+    ]
   };
   for (const [name, steps] of Object.entries(skills)) {
     writeFile(cwd, `.claude/skills/${name}/SKILL.md`, skillMarkdown(name, steps));
   }
 }
 
-function writeGenericSkills(cwd, profile) {
-  writeFile(cwd, ".agents/skills/review/SKILL.md", skillMarkdown("review", ["Read AGENTS.md first.", "Review only the scoped change.", "Prioritize bugs, regressions, missing tests, and security risks.", `Use ${profile.testCommand} for verification when possible.`]));
-  writeFile(cwd, ".agents/skills/release/SKILL.md", skillMarkdown("release", ["Run tests and build.", "Check launch checklist and deployment notes.", "Verify secrets are not committed.", "Prepare concise release notes."]));
+function writeGenericSkills(cwd: string, profile: ProjectProfile) {
+  writeFile(
+    cwd,
+    ".agents/skills/review/SKILL.md",
+    skillMarkdown("review", [
+      "Read AGENTS.md first.",
+      "Review only the scoped change.",
+      "Prioritize bugs, regressions, missing tests, and security risks.",
+      `Use ${profile.testCommand} for verification when possible.`
+    ])
+  );
+  writeFile(
+    cwd,
+    ".agents/skills/release/SKILL.md",
+    skillMarkdown("release", [
+      "Run tests and build.",
+      "Check launch checklist and deployment notes.",
+      "Verify secrets are not committed.",
+      "Prepare concise release notes."
+    ])
+  );
 }
 
-function writeCodexAgents(cwd, profile) {
+function writeCodexAgents(cwd: string, profile: ProjectProfile) {
   const agents = {
     reviewer: "Review diffs for bugs, regressions, missing tests, and security risks. Do not rewrite code.",
     "test-writer": `Add focused tests using existing conventions. Verify with ${profile.testCommand}.`,
-    "migration-expert": "Review schema, dependency, or framework migrations. Call out rollback and compatibility risks.",
+    "migration-expert":
+      "Review schema, dependency, or framework migrations. Call out rollback and compatibility risks.",
     "docs-researcher": "Research documentation gaps and update repo docs without changing product behavior.",
     "performance-optimizer": "Optimize only measured bottlenecks. Preserve behavior and add verification notes."
   };
@@ -227,7 +289,7 @@ function writeCodexAgents(cwd, profile) {
   }
 }
 
-function githubInstruction(name, applyTo, rules) {
+function githubInstruction(name: string, applyTo: string, rules: string[]) {
   return `---
 applyTo: "${applyTo}"
 ---
@@ -238,7 +300,7 @@ ${rules.map((rule) => `- ${rule}`).join("\n")}
 `;
 }
 
-function skillMarkdown(name, steps) {
+function skillMarkdown(name: string, steps: string[]) {
   return `---
 description: ${name.replace(/-/g, " ")} workflow for disciplined AI coding agents.
 ---
@@ -249,7 +311,7 @@ ${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}
 `;
 }
 
-function codexAgent(name, purpose, profile) {
+function codexAgent(name: string, purpose: string, profile: ProjectProfile) {
   return `# ${name}
 
 ## Purpose
@@ -278,7 +340,7 @@ ${purpose}
 `;
 }
 
-function cursorRules(profile) {
+function cursorRules(profile: ProjectProfile) {
   return `---
 description: AgentKick repo rules
 alwaysApply: true
@@ -296,24 +358,46 @@ Read AGENTS.md before making broad edits.
 `;
 }
 
-function stackNotes(profile) {
-  const notes = [];
-  if (profile.stack.includes("chrome-extension")) notes.push("Chrome extension: preserve least-privilege manifest permissions and verify popup behavior in a constrained viewport.");
-  if (profile.stack.includes("nextjs")) notes.push("Next.js: keep server/client component boundaries explicit and run a production build before shipping.");
-  if (profile.stack.includes("netlify")) notes.push("Netlify: verify publish directory and build command from the site root before deploying.");
-  if (profile.stack.includes("docker")) notes.push("Docker: avoid changing exposed ports, volumes, or environment contracts without documenting migration impact.");
-  if (profile.stack.includes("python")) notes.push("Python: prefer existing dependency and formatting tools detected in the repo, and verify API behavior with pytest when available.");
-  if (profile.stack.includes("fastapi")) notes.push("FastAPI: validate route schemas, status codes, and production server settings before shipping.");
-  if (profile.stack.includes("flask")) notes.push("Flask: keep app factory patterns clean and avoid storing secrets in config defaults.");
-  if (profile.stack.includes("laravel")) notes.push("Laravel: preserve framework conventions, review migrations carefully, and verify with php artisan test.");
-  if (profile.stack.includes("go")) notes.push("Go: prefer explicit errors, table-driven tests, and go test ./... before releases.");
-  if (profile.stack.includes("rust")) notes.push("Rust: avoid unsafe code unless justified and verify with cargo test before releases.");
-  if (profile.stack.includes("electron")) notes.push("Electron: keep main, preload, and renderer boundaries strict; avoid broad IPC or Node access in renderer code.");
-  if (notes.length === 0) notes.push("Generic: document missing commands before assuming test, build, or deploy behavior.");
+function stackNotes(profile: ProjectProfile) {
+  const notes: string[] = [];
+  if (profile.stack.includes("chrome-extension"))
+    notes.push(
+      "Chrome extension: preserve least-privilege manifest permissions and verify popup behavior in a constrained viewport."
+    );
+  if (profile.stack.includes("nextjs"))
+    notes.push("Next.js: keep server/client component boundaries explicit and run a production build before shipping.");
+  if (profile.stack.includes("netlify"))
+    notes.push("Netlify: verify publish directory and build command from the site root before deploying.");
+  if (profile.stack.includes("docker"))
+    notes.push(
+      "Docker: avoid changing exposed ports, volumes, or environment contracts without documenting migration impact."
+    );
+  if (profile.stack.includes("python"))
+    notes.push(
+      "Python: prefer existing dependency and formatting tools detected in the repo, and verify API behavior with pytest when available."
+    );
+  if (profile.stack.includes("fastapi"))
+    notes.push("FastAPI: validate route schemas, status codes, and production server settings before shipping.");
+  if (profile.stack.includes("flask"))
+    notes.push("Flask: keep app factory patterns clean and avoid storing secrets in config defaults.");
+  if (profile.stack.includes("laravel"))
+    notes.push(
+      "Laravel: preserve framework conventions, review migrations carefully, and verify with php artisan test."
+    );
+  if (profile.stack.includes("go"))
+    notes.push("Go: prefer explicit errors, table-driven tests, and go test ./... before releases.");
+  if (profile.stack.includes("rust"))
+    notes.push("Rust: avoid unsafe code unless justified and verify with cargo test before releases.");
+  if (profile.stack.includes("electron"))
+    notes.push(
+      "Electron: keep main, preload, and renderer boundaries strict; avoid broad IPC or Node access in renderer code."
+    );
+  if (notes.length === 0)
+    notes.push("Generic: document missing commands before assuming test, build, or deploy behavior.");
   return notes;
 }
 
-function titleize(value) {
+function titleize(value: string) {
   return value
     .split(/[-_\s]+/)
     .filter(Boolean)

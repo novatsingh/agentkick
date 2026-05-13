@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { existsAny, hasText, listTopLevelFiles, readJsonSafe } from "./fs-utils.js";
+import type { DetectionDebug, PackageJson, ProjectProfile, Template } from "./types.js";
 
-export function buildProfile(template, projectName) {
-  const stackByTemplate = {
+export function buildProfile(template: Template, projectName: string): ProjectProfile {
+  const stackByTemplate: Record<Template, string[]> = {
     "chrome-extension": ["chrome-extension", "javascript", "browser"],
     nextjs: ["nextjs", "react", "typescript"],
     "landing-page": ["static-site", "netlify"],
@@ -16,7 +17,7 @@ export function buildProfile(template, projectName) {
     electron: ["electron", "javascript", "desktop"]
   };
 
-  const packageManagerByTemplate = {
+  const packageManagerByTemplate: Partial<Record<Template, string>> = {
     fastapi: "python",
     flask: "python",
     laravel: "composer",
@@ -24,7 +25,7 @@ export function buildProfile(template, projectName) {
     "rust-cli": "cargo"
   };
 
-  const testCommandByTemplate = {
+  const testCommandByTemplate: Partial<Record<Template, string>> = {
     "landing-page": "npm run check",
     fastapi: "python -m pytest",
     flask: "python -m pytest",
@@ -33,7 +34,7 @@ export function buildProfile(template, projectName) {
     "rust-cli": "cargo test"
   };
 
-  const buildCommandByTemplate = {
+  const buildCommandByTemplate: Partial<Record<Template, string>> = {
     "chrome-extension": "npm run package",
     fastapi: "python -m compileall app tests",
     flask: "python -m compileall app tests",
@@ -53,8 +54,8 @@ export function buildProfile(template, projectName) {
   };
 }
 
-export function detectProject(cwd) {
-  const packageJson = readJsonSafe(path.join(cwd, "package.json"));
+export function detectProject(cwd: string): ProjectProfile {
+  const packageJson = readJsonSafe<PackageJson>(path.join(cwd, "package.json"));
   const name = packageJson?.name ?? path.basename(cwd);
   const detection = analyzeProject(cwd, packageJson);
   const primaryStack = detection.primaryStack;
@@ -75,22 +76,24 @@ export function detectProject(cwd) {
   };
 }
 
-export function defaultPacksForTemplate(template) {
-  return {
-    "chrome-extension": ["chrome-extension"],
-    nextjs: ["nextjs"],
-    "landing-page": ["netlify"],
-    "node-cli": ["github"],
-    fastapi: ["python"],
-    flask: ["python"],
-    laravel: ["php"],
-    "go-cli": ["go", "github"],
-    "rust-cli": ["rust", "github"],
-    electron: ["electron", "github"]
-  }[template] ?? [];
+export function defaultPacksForTemplate(template: string): string[] {
+  return (
+    {
+      "chrome-extension": ["chrome-extension"],
+      nextjs: ["nextjs"],
+      "landing-page": ["netlify"],
+      "node-cli": ["github"],
+      fastapi: ["python"],
+      flask: ["python"],
+      laravel: ["php"],
+      "go-cli": ["go", "github"],
+      "rust-cli": ["rust", "github"],
+      electron: ["electron", "github"]
+    }[template] ?? []
+  );
 }
 
-export function packageManagerCommand(cwd) {
+export function packageManagerCommand(cwd: string) {
   const files = listTopLevelFiles(cwd);
   if (files.has("pnpm-workspace.yaml")) return "pnpm";
   if (files.has("pnpm-lock.yaml")) return "pnpm";
@@ -98,22 +101,24 @@ export function packageManagerCommand(cwd) {
   return "npm";
 }
 
-function hasDependency(packageJson, dependency) {
+function hasDependency(packageJson: PackageJson | null, dependency: string) {
   return packageDependencies(packageJson).has(dependency);
 }
 
-function hasAnyDependency(packageJson, dependencies) {
+function hasAnyDependency(packageJson: PackageJson | null, dependencies: string[]) {
   const available = packageDependencies(packageJson);
   return dependencies.some((dependency) => available.has(dependency));
 }
 
-function packageDependencies(packageJson) {
-  const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+function packageDependencies(packageJson: PackageJson | null) {
+  const sections: Array<
+    keyof Pick<PackageJson, "dependencies" | "devDependencies" | "peerDependencies" | "optionalDependencies">
+  > = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
   const entries = sections.flatMap((section) => Object.keys(packageJson?.[section] ?? {}));
   return new Set(entries);
 }
 
-function analyzeProject(cwd, packageJson) {
+function analyzeProject(cwd: string, packageJson: PackageJson | null): DetectionDebug {
   const files = listTopLevelFiles(cwd);
   const checked = new Set([
     "package.json",
@@ -133,32 +138,32 @@ function analyzeProject(cwd, packageJson) {
     "turbo.json",
     "pnpm-workspace.yaml"
   ]);
-  const configFiles = new Set();
+  const configFiles = new Set<string>();
   const reasoning = [];
-  const detected = new Set();
-  const primaryCandidates = new Set();
-  const capabilities = new Set();
+  const detected = new Set<string>();
+  const primaryCandidates = new Set<string>();
+  const capabilities = new Set<string>();
 
-  const checkPath = (relativePath) => {
+  const checkPath = (relativePath: string) => {
     checked.add(relativePath);
     return fs.existsSync(path.join(cwd, relativePath));
   };
-  const addConfig = (relativePath) => {
+  const addConfig = (relativePath: string) => {
     configFiles.add(relativePath);
     checked.add(relativePath);
   };
-  const addPrimary = (label, reason) => {
+  const addPrimary = (label: string, reason: string) => {
     detected.add(label);
     primaryCandidates.add(label);
     reasoning.push(`${label}: ${reason}`);
   };
-  const addCapability = (label, reason) => {
+  const addCapability = (label: string, reason: string) => {
     detected.add(label);
     capabilities.add(label);
     reasoning.push(`${label}: ${reason}`);
   };
 
-  const topLevelMatches = (pattern) => {
+  const topLevelMatches = (pattern: RegExp) => {
     const matches = [...files].filter((file) => pattern.test(file)).sort();
     for (const match of matches) addConfig(match);
     return matches;
@@ -167,7 +172,9 @@ function analyzeProject(cwd, packageJson) {
   if (topLevelMatches(/^turbo\.json$/).length > 0) addPrimary("monorepo-turborepo", "turbo.json exists");
   if (topLevelMatches(/^pnpm-workspace\.yaml$/).length > 0) addPrimary("monorepo-pnpm", "pnpm-workspace.yaml exists");
 
-  const manifestFiles = ["manifest.json", "public/manifest.json", "src/manifest.json"].filter((file) => checkPath(file));
+  const manifestFiles = ["manifest.json", "public/manifest.json", "src/manifest.json"].filter((file) =>
+    checkPath(file)
+  );
   const chromeManifest = manifestFiles.find((file) => readJsonSafe(path.join(cwd, file))?.manifest_version);
   if (chromeManifest) {
     addConfig(chromeManifest);
@@ -211,8 +218,10 @@ function analyzeProject(cwd, packageJson) {
     addCapability("netlify", "netlify.toml exists");
   }
   if (files.has("pyproject.toml") || files.has("requirements.txt")) addPrimary("python", "Python project files exist");
-  if (existsAny(cwd, ["app/main.py"]) && hasText(path.join(cwd, "app/main.py"), "FastAPI")) addPrimary("fastapi", "app/main.py imports FastAPI");
-  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path.join(cwd, "app.py"), "Flask")) addPrimary("flask", "Flask app entrypoint detected");
+  if (existsAny(cwd, ["app/main.py"]) && hasText(path.join(cwd, "app/main.py"), "FastAPI"))
+    addPrimary("fastapi", "app/main.py imports FastAPI");
+  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path.join(cwd, "app.py"), "Flask"))
+    addPrimary("flask", "Flask app entrypoint detected");
   if (files.has("composer.json")) addPrimary("php", "composer.json exists");
   if (files.has("artisan")) addPrimary("laravel", "artisan exists");
   if (files.has("go.mod")) addPrimary("go", "go.mod exists");
@@ -241,7 +250,7 @@ function analyzeProject(cwd, packageJson) {
   };
 }
 
-function pickPrimaryStack(candidates) {
+function pickPrimaryStack(candidates: Set<string>) {
   const priority = [
     "monorepo-turborepo",
     "monorepo-pnpm",
@@ -263,7 +272,7 @@ function pickPrimaryStack(candidates) {
   return priority.find((label) => candidates.has(label)) ?? "generic";
 }
 
-function orderLabels(labels) {
+function orderLabels(labels: string[]) {
   const priority = [
     "react",
     "tailwind",
@@ -286,7 +295,7 @@ function orderLabels(labels) {
   });
 }
 
-function directoryExists(cwd, relativePath, checked = new Set()) {
+function directoryExists(cwd: string, relativePath: string, checked = new Set<string>()) {
   checked.add(relativePath);
   try {
     return fs.statSync(path.join(cwd, relativePath)).isDirectory();
@@ -295,7 +304,7 @@ function directoryExists(cwd, relativePath, checked = new Set()) {
   }
 }
 
-function detectPackageManager(cwd, stack) {
+function detectPackageManager(cwd: string, stack: string[]) {
   const files = listTopLevelFiles(cwd);
   if (files.has("pnpm-workspace.yaml")) return "pnpm";
   if (files.has("pnpm-lock.yaml")) return "pnpm";
@@ -307,7 +316,7 @@ function detectPackageManager(cwd, stack) {
   return "npm";
 }
 
-function detectTestCommand(cwd, packageJson, stack) {
+function detectTestCommand(cwd: string, packageJson: PackageJson | null, stack: string[]) {
   if (packageJson?.scripts?.test) return `${packageManagerCommand(cwd)} test`;
   if (stack.includes("laravel")) return "php artisan test";
   if (stack.includes("go")) return "go test ./...";
@@ -316,7 +325,7 @@ function detectTestCommand(cwd, packageJson, stack) {
   return "document the test command";
 }
 
-function detectBuildCommand(cwd, packageJson, stack) {
+function detectBuildCommand(cwd: string, packageJson: PackageJson | null, stack: string[]) {
   if (packageJson?.scripts?.build) return `${packageManagerCommand(cwd)} run build`;
   if (stack.includes("laravel")) return "composer install && php artisan test";
   if (stack.includes("go")) return "go build ./...";
@@ -325,8 +334,8 @@ function detectBuildCommand(cwd, packageJson, stack) {
   return "document the build command";
 }
 
-function launchTargetFor(template) {
-  return {
+function launchTargetFor(template: Template) {
+  const launchTargets: Partial<Record<Template, string>> = {
     "landing-page": "Netlify",
     fastapi: "Docker or Render",
     flask: "Docker or Render",
@@ -334,5 +343,6 @@ function launchTargetFor(template) {
     "go-cli": "GitHub Releases",
     "rust-cli": "GitHub Releases",
     electron: "GitHub Releases"
-  }[template] ?? "GitHub";
+  };
+  return launchTargets[template] ?? "GitHub";
 }

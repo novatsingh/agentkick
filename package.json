@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "description": "Prepare repositories with AI-agent instructions, skills, safety rules, and readiness checks for Codex, Claude Code, Cursor, GitHub Copilot, and MCP.",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "bin": {
-    "agentkick": "./bin/agentkick.js"
+    "agentkick": "./dist/index.js"
   },
   "files": [
-    "bin",
-    "src",
-    "scripts",
+    "dist",
     "docs",
     "README.md",
     "LICENSE",
@@ -17,10 +20,27 @@
     "CONTRIBUTING.md"
   ],
   "scripts": {
-    "check": "node scripts/check.js",
+    "build": "tsup",
+    "check": "npm run lint && npm run typecheck",
+    "format": "prettier --write package.json tsconfig.json eslint.config.js tsup.config.mjs \"src/**/*.ts\"",
+    "format:check": "prettier --check package.json tsconfig.json eslint.config.js tsup.config.mjs \"src/**/*.ts\"",
+    "lint": "eslint .",
+    "prepack": "npm run build",
+    "smoke": "node dist/index.js --help && node dist/index.js doctor --json",
     "test": "npm run check",
-    "build": "npm test",
-    "smoke": "node bin/agentkick.js doctor"
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/node": "^22.15.17",
+    "eslint": "^9.26.0",
+    "prettier": "^3.5.3",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0"
   },
   "keywords": [
     "codex",

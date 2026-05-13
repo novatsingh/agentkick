@@ -3,20 +3,20 @@ import path from "node:path";
 
 let writeMode = { dryRun: false };
 
-export function setWriteMode(mode) {
+export function setWriteMode(mode: Partial<typeof writeMode>) {
   writeMode = { ...writeMode, ...mode };
 }
 
-export function ensureDir(dir) {
+export function ensureDir(dir: string) {
   if (writeMode.dryRun) return;
   fs.mkdirSync(dir, { recursive: true });
 }
 
-export function writeFile(cwd, relativePath, content) {
+export function writeFile(cwd: string, relativePath: string, content: string) {
   writeAbsoluteFile(path.join(cwd, relativePath), content);
 }
 
-export function writeAbsoluteFile(file, content) {
+export function writeAbsoluteFile(file: string, content: string) {
   if (writeMode.dryRun) {
     const action = fs.existsSync(file) ? "update" : "create";
     console.log(`DRY-RUN would ${action}: ${file}`);
@@ -32,15 +32,15 @@ export function writeAbsoluteFile(file, content) {
   fs.writeFileSync(file, content, "utf8");
 }
 
-export function readJsonSafe(file) {
+export function readJsonSafe<T = Record<string, unknown>>(file: string): T | null {
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
+    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
   } catch {
     return null;
   }
 }
 
-export function listTopLevelFiles(cwd) {
+export function listTopLevelFiles(cwd: string): Set<string> {
   try {
     return new Set(fs.readdirSync(cwd));
   } catch {
@@ -48,11 +48,11 @@ export function listTopLevelFiles(cwd) {
   }
 }
 
-export function existsAny(cwd, candidates) {
+export function existsAny(cwd: string, candidates: string[]) {
   return candidates.some((candidate) => fs.existsSync(path.join(cwd, candidate)));
 }
 
-export function hasText(file, text) {
+export function hasText(file: string, text: string) {
   try {
     return fs.readFileSync(file, "utf8").includes(text);
   } catch {
@@ -60,6 +60,6 @@ export function hasText(file, text) {
   }
 }
 
-export function json(value) {
+export function json(value: unknown) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }

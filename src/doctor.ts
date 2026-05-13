@@ -2,8 +2,28 @@ import fs from "node:fs";
 import path from "node:path";
 import { readJsonSafe } from "./fs-utils.js";
 import { detectProject } from "./profile.js";
+import type { DetectionDebug, DoctorOptions, PackageJson } from "./types.js";
 
-export function runDoctor(cwd, options = {}) {
+type DoctorCheck = { ok: boolean; label: string; message: string };
+
+type AgentkickConfig = {
+  testCommand?: string;
+  buildCommand?: string;
+};
+
+type DoctorAudit = {
+  score: number;
+  status: "ready" | "blocked" | "needs-review";
+  detectedStack: string;
+  detectedCapabilities: string[];
+  detectionDebug: DetectionDebug;
+  checks: DoctorCheck[];
+  warnings: string[];
+  failures: string[];
+  suggestions: string[];
+};
+
+export function runDoctor(cwd: string, options: DoctorOptions = {}) {
   const audit = auditRepo(cwd);
   if (options.json) {
     console.log(JSON.stringify(audit, null, 2));
@@ -15,9 +35,9 @@ export function runDoctor(cwd, options = {}) {
   }
 }
 
-function auditRepo(cwd) {
-  const packageInfo = readJsonSafe(path.join(cwd, "package.json"));
-  const config = readJsonSafe(path.join(cwd, ".agentkick.json"));
+function auditRepo(cwd: string): DoctorAudit {
+  const packageInfo = readJsonSafe<PackageJson>(path.join(cwd, "package.json"));
+  const config = readJsonSafe<AgentkickConfig>(path.join(cwd, ".agentkick.json"));
   const profile = detectProject(cwd);
   const checks = [
     requiredFile(cwd, "AGENTS.md", "master repo intelligence"),
@@ -43,9 +63,18 @@ function auditRepo(cwd) {
   return {
     score,
     status: failures.length === 0 && score >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
-    detectedStack: profile.primaryStack,
-    detectedCapabilities: profile.capabilities,
-    detectionDebug: profile.detection,
+    detectedStack: profile.primaryStack ?? profile.template,
+    detectedCapabilities: profile.capabilities ?? [],
+    detectionDebug: profile.detection ?? {
+      cwd,
+      primaryStack: profile.primaryStack ?? profile.template,
+      capabilities: profile.capabilities ?? [],
+      detected: profile.stack,
+      filesChecked: [],
+      dependencies: [],
+      configFiles: [],
+      reasoning: []
+    },
     checks,
     warnings,
     failures,
@@ -53,11 +82,12 @@ function auditRepo(cwd) {
   };
 }
 
-function printAudit(audit, options) {
+function printAudit(audit: DoctorAudit, options: DoctorOptions) {
   console.log("AgentKick doctor");
   console.log("");
   console.log(`Detected stack: ${audit.detectedStack}`);
-  if (audit.detectedCapabilities.length > 0) console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
+  if (audit.detectedCapabilities.length > 0)
+    console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
   if (audit.detectedStack === "generic") {
     console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
   }
@@ -84,7 +114,7 @@ function printAudit(audit, options) {
   if (options.debug) printDetectionDebug(audit.detectionDebug);
 }
 
-function requiredFile(cwd, relativePath, label) {
+function requiredFile(cwd: string, relativePath: string, label: string): DoctorCheck {
   const fullPath = path.join(cwd, relativePath);
   if (!fs.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
   const content = fs.readFileSync(fullPath, "utf8");
@@ -92,8 +122,8 @@ function requiredFile(cwd, relativePath, label) {
   return { ok: true, label, message: relativePath };
 }
 
-function qualityWarnings(cwd) {
-  const warnings = [];
+function qualityWarnings(cwd: string) {
+  const warnings: string[] = [];
   const agents = readFileSafe(path.join(cwd, "AGENTS.md"));
   if (agents && !agents.includes("Forbidden")) warnings.push("AGENTS.md should define forbidden modifications.");
   if (agents && !agents.includes("Test:")) warnings.push("AGENTS.md should document test commands.");
@@ -103,25 +133,27 @@ function qualityWarnings(cwd) {
   return warnings;
 }
 
-function commandWarnings(packageInfo, config) {
-  const warnings = [];
+function commandWarnings(packageInfo: PackageJson | null, config: AgentkickConfig | null) {
+  const warnings: string[] = [];
   if (packageInfo?.scripts) {
-    if (!packageInfo.scripts.test && (!config?.testCommand || config.testCommand.startsWith("document "))) warnings.push("No test command documented.");
-    if (!packageInfo.scripts.build && (!config?.buildCommand || config.buildCommand.startsWith("document "))) warnings.push("No build command documented.");
+    if (!packageInfo.scripts.test && (!config?.testCommand || config.testCommand.startsWith("document ")))
+      warnings.push("No test command documented.");
+    if (!packageInfo.scripts.build && (!config?.buildCommand || config.buildCommand.startsWith("document ")))
+      warnings.push("No build command documented.");
   } else if (!config?.testCommand || config.testCommand.startsWith("document ")) {
     warnings.push("No package scripts or documented test command detected.");
   }
   return warnings;
 }
 
-function ciWarnings(cwd) {
+function ciWarnings(cwd: string) {
   const workflowDir = path.join(cwd, ".github", "workflows");
   if (!fs.existsSync(workflowDir)) return ["No GitHub Actions workflow detected."];
   return [];
 }
 
-function findRiskyMcp(cwd) {
-  const warnings = [];
+function findRiskyMcp(cwd: string) {
+  const warnings: string[] = [];
   for (const fileName of [".mcp.json", "mcp.json"]) {
     const fullPath = path.join(cwd, fileName);
     if (!fs.existsSync(fullPath)) continue;
@@ -129,23 +161,30 @@ function findRiskyMcp(cwd) {
     if (content.includes("C:\\\\") || (content.includes("/") && content.includes("filesystem"))) {
       warnings.push(`MCP safety: ${fileName} may allow broad filesystem access. Restrict it to this repo if possible.`);
     }
-    if (content.includes("*") && content.includes("command")) warnings.push(`MCP safety: ${fileName} may allow wildcard command execution.`);
-    if (content.includes("env") && content.includes("SECRET")) warnings.push(`MCP safety: ${fileName} may expose secret-like environment variables.`);
+    if (content.includes("*") && content.includes("command"))
+      warnings.push(`MCP safety: ${fileName} may allow wildcard command execution.`);
+    if (content.includes("env") && content.includes("SECRET"))
+      warnings.push(`MCP safety: ${fileName} may expose secret-like environment variables.`);
   }
   return warnings;
 }
 
-function suggestionsFor(failures, warnings) {
-  const suggestions = [];
-  if (failures.some((item) => item.includes("AGENTS.md"))) suggestions.push("Run agentkick init to regenerate the master repo intelligence layer.");
-  if (failures.some((item) => item.includes(".claude/skills"))) suggestions.push("Regenerate Claude skills with agentkick init.");
-  if (failures.some((item) => item.includes(".codex/agents"))) suggestions.push("Regenerate Codex specialist agents with agentkick init.");
-  if (warnings.some((item) => item.includes("MCP safety"))) suggestions.push("Restrict MCP tools to repo-scoped paths and explicit allowlists.");
-  if (warnings.some((item) => item.includes("workflow"))) suggestions.push("Add a CI workflow or run agentkick add github.");
+function suggestionsFor(failures: string[], warnings: string[]) {
+  const suggestions: string[] = [];
+  if (failures.some((item) => item.includes("AGENTS.md")))
+    suggestions.push("Run agentkick init to regenerate the master repo intelligence layer.");
+  if (failures.some((item) => item.includes(".claude/skills")))
+    suggestions.push("Regenerate Claude skills with agentkick init.");
+  if (failures.some((item) => item.includes(".codex/agents")))
+    suggestions.push("Regenerate Codex specialist agents with agentkick init.");
+  if (warnings.some((item) => item.includes("MCP safety")))
+    suggestions.push("Restrict MCP tools to repo-scoped paths and explicit allowlists.");
+  if (warnings.some((item) => item.includes("workflow")))
+    suggestions.push("Add a CI workflow or run agentkick add github.");
   return [...new Set(suggestions)];
 }
 
-function readFileSafe(file) {
+function readFileSafe(file: string) {
   try {
     return fs.readFileSync(file, "utf8");
   } catch {
@@ -153,7 +192,7 @@ function readFileSafe(file) {
   }
 }
 
-function printDetectionDebug(detection) {
+function printDetectionDebug(detection: DetectionDebug) {
   console.log("");
   console.log("Stack detection debug:");
   console.log(`Current working directory: ${detection.cwd}`);
@@ -167,7 +206,7 @@ function printDetectionDebug(detection) {
   printList(detection.reasoning);
 }
 
-function printList(items) {
+function printList(items: string[]) {
   if (!items || items.length === 0) {
     console.log("- none");
     return;
