@@ -1,5 +1,5 @@
-import fs from "node:fs";
 import path from "node:path";
+import fs from "fs-extra";
 
 let writeMode = { dryRun: false };
 
@@ -9,7 +9,7 @@ export function setWriteMode(mode: Partial<typeof writeMode>) {
 
 export function ensureDir(dir: string) {
   if (writeMode.dryRun) return;
-  fs.mkdirSync(dir, { recursive: true });
+  fs.ensureDirSync(dir);
 }
 
 export function writeFile(cwd: string, relativePath: string, content: string) {

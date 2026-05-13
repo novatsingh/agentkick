@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { existsAny, hasText, listTopLevelFiles, readJsonSafe } from "./fs-utils.js";
-import type { DetectionDebug, PackageJson, ProjectProfile, Template, WorkspaceHint } from "./types.js";
+import { existsAny, hasText, listTopLevelFiles, readJsonSafe } from "../utils/fs.js";
+import type { DetectionDebug, PackageJson, ProjectProfile, Template, WorkspaceHint } from "../core/types.js";
 
 export function buildProfile(template: Template, projectName: string): ProjectProfile {
   const stackByTemplate: Record<Template, string[]> = {

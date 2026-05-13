@@ -1,22 +1,51 @@
 #!/usr/bin/env node
 
-// src/cli.ts
-import fs4 from "fs";
-import path5 from "path";
+// src/core/program.ts
 import process2 from "process";
-import readline from "readline";
 import { Command } from "commander";
 
-// src/fs-utils.ts
-import fs from "fs";
+// src/core/constants.ts
+var VERSION = "0.1.0";
+var SUPPORTED_TEMPLATES = [
+  "chrome-extension",
+  "nextjs",
+  "landing-page",
+  "node-cli",
+  "fastapi",
+  "flask",
+  "laravel",
+  "go-cli",
+  "rust-cli",
+  "electron"
+];
+var SUPPORTED_PACKS = [
+  "core",
+  "chrome-extension",
+  "nextjs",
+  "netlify",
+  "security",
+  "github",
+  "python",
+  "php",
+  "go",
+  "rust",
+  "electron"
+];
+
+// src/detectors/project-detector.ts
+import fs2 from "fs";
+import path2 from "path";
+
+// src/utils/fs.ts
 import path from "path";
+import fs from "fs-extra";
 var writeMode = { dryRun: false };
 function setWriteMode(mode) {
   writeMode = { ...writeMode, ...mode };
 }
 function ensureDir(dir) {
   if (writeMode.dryRun) return;
-  fs.mkdirSync(dir, { recursive: true });
+  fs.ensureDirSync(dir);
 }
 function writeFile(cwd, relativePath, content) {
   writeAbsoluteFile(path.join(cwd, relativePath), content);
@@ -65,7 +94,392 @@ function json(value) {
 `;
 }
 
-// src/agent-files.ts
+// src/detectors/project-detector.ts
+function buildProfile(template, projectName) {
+  const stackByTemplate = {
+    "chrome-extension": ["chrome-extension", "javascript", "browser"],
+    nextjs: ["nextjs", "react", "typescript"],
+    "landing-page": ["static-site", "netlify"],
+    "node-cli": ["node-cli", "javascript"],
+    fastapi: ["fastapi", "python", "api"],
+    flask: ["flask", "python", "api"],
+    laravel: ["laravel", "php", "web"],
+    "go-cli": ["go", "cli"],
+    "rust-cli": ["rust", "cli"],
+    electron: ["electron", "javascript", "desktop"]
+  };
+  const packageManagerByTemplate = {
+    fastapi: "python",
+    flask: "python",
+    laravel: "composer",
+    "go-cli": "go",
+    "rust-cli": "cargo"
+  };
+  const testCommandByTemplate = {
+    "landing-page": "npm run check",
+    fastapi: "python -m pytest",
+    flask: "python -m pytest",
+    laravel: "php artisan test",
+    "go-cli": "go test ./...",
+    "rust-cli": "cargo test"
+  };
+  const buildCommandByTemplate = {
+    "chrome-extension": "npm run package",
+    fastapi: "python -m compileall app tests",
+    flask: "python -m compileall app tests",
+    laravel: "composer install && php artisan test",
+    "go-cli": "go build ./...",
+    "rust-cli": "cargo build"
+  };
+  return {
+    name: projectName,
+    template,
+    stack: stackByTemplate[template] ?? ["generic"],
+    packageManager: packageManagerByTemplate[template] ?? "npm",
+    testCommand: testCommandByTemplate[template] ?? "npm test",
+    buildCommand: buildCommandByTemplate[template] ?? "npm run build",
+    launchTarget: launchTargetFor(template)
+  };
+}
+function detectProject(cwd) {
+  const packageJson = readJsonSafe(path2.join(cwd, "package.json"));
+  const name = packageJson?.name ?? path2.basename(cwd);
+  const detection = analyzeProject(cwd, packageJson);
+  const primaryStack = detection.primaryStack;
+  const capabilities = detection.capabilities;
+  const stack = primaryStack === "generic" ? [] : [primaryStack, ...capabilities];
+  return {
+    name,
+    template: primaryStack,
+    primaryStack,
+    capabilities,
+    stack,
+    detection,
+    packageManager: detectPackageManager(cwd, stack),
+    testCommand: detectTestCommand(cwd, packageJson, stack),
+    buildCommand: detectBuildCommand(cwd, packageJson, stack),
+    launchTarget: stack.includes("netlify") ? "Netlify" : "GitHub"
+  };
+}
+function defaultPacksForTemplate(template) {
+  return {
+    "chrome-extension": ["chrome-extension"],
+    nextjs: ["nextjs"],
+    "landing-page": ["netlify"],
+    "node-cli": ["github"],
+    fastapi: ["python"],
+    flask: ["python"],
+    laravel: ["php"],
+    "go-cli": ["go", "github"],
+    "rust-cli": ["rust", "github"],
+    electron: ["electron", "github"]
+  }[template] ?? [];
+}
+function packageManagerCommand(cwd) {
+  const files = listTopLevelFiles(cwd);
+  if (files.has("pnpm-workspace.yaml")) return "pnpm";
+  if (files.has("pnpm-lock.yaml")) return "pnpm";
+  if (files.has("yarn.lock")) return "yarn";
+  return "npm";
+}
+function hasDependency(packageJson, dependency) {
+  return packageDependencies(packageJson).has(dependency);
+}
+function hasAnyDependency(packageJson, dependencies) {
+  const available = packageDependencies(packageJson);
+  return dependencies.some((dependency) => available.has(dependency));
+}
+function packageDependencies(packageJson) {
+  const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+  const entries = sections.flatMap((section) => Object.keys(packageJson?.[section] ?? {}));
+  return new Set(entries);
+}
+function analyzeProject(cwd, packageJson) {
+  const files = listTopLevelFiles(cwd);
+  const checked = /* @__PURE__ */ new Set([
+    "package.json",
+    "manifest.json",
+    "public/manifest.json",
+    "src/manifest.json",
+    "next.config.*",
+    "vite.config.*",
+    "tailwind.config.*",
+    "prisma/schema.prisma",
+    "supabase",
+    "app/api",
+    "pages/api",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "Dockerfile",
+    "turbo.json",
+    "pnpm-workspace.yaml"
+  ]);
+  const configFiles = /* @__PURE__ */ new Set();
+  const reasoning = [];
+  const detected = /* @__PURE__ */ new Set();
+  const primaryCandidates = /* @__PURE__ */ new Set();
+  const capabilities = /* @__PURE__ */ new Set();
+  const checkPath = (relativePath) => {
+    checked.add(relativePath);
+    return fs2.existsSync(path2.join(cwd, relativePath));
+  };
+  const addConfig = (relativePath) => {
+    configFiles.add(relativePath);
+    checked.add(relativePath);
+  };
+  const addPrimary = (label, reason) => {
+    detected.add(label);
+    primaryCandidates.add(label);
+    reasoning.push(`${label}: ${reason}`);
+  };
+  const addCapability = (label, reason) => {
+    detected.add(label);
+    capabilities.add(label);
+    reasoning.push(`${label}: ${reason}`);
+  };
+  const topLevelMatches = (pattern) => {
+    const matches = [...files].filter((file2) => pattern.test(file2)).sort();
+    for (const match of matches) addConfig(match);
+    return matches;
+  };
+  if (topLevelMatches(/^turbo\.json$/).length > 0) addPrimary("monorepo-turborepo", "turbo.json exists");
+  if (topLevelMatches(/^pnpm-workspace\.yaml$/).length > 0) addPrimary("monorepo-pnpm", "pnpm-workspace.yaml exists");
+  const manifestFiles = ["manifest.json", "public/manifest.json", "src/manifest.json"].filter(
+    (file2) => checkPath(file2)
+  );
+  const chromeManifest = manifestFiles.find((file2) => readJsonSafe(path2.join(cwd, file2))?.manifest_version);
+  if (chromeManifest) {
+    addConfig(chromeManifest);
+    addPrimary("chrome-extension", `${chromeManifest} contains manifest_version`);
+  }
+  const nextConfigs = topLevelMatches(/^next\.config\.(js|mjs|cjs|ts)$/);
+  if (nextConfigs.length > 0 || hasDependency(packageJson, "next")) {
+    addPrimary("nextjs", nextConfigs.length > 0 ? `${nextConfigs[0]} exists` : "package.json depends on next");
+  }
+  const viteConfigs = topLevelMatches(/^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/);
+  if (viteConfigs.length > 0 || hasDependency(packageJson, "vite")) {
+    addPrimary("vite", viteConfigs.length > 0 ? `${viteConfigs[0]} exists` : "package.json depends on vite");
+  }
+  if (hasDependency(packageJson, "react")) {
+    addCapability("react", "package.json depends on react");
+    primaryCandidates.add("react");
+  }
+  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
+    addPrimary("node-api", "package.json depends on express, fastify, or hono");
+  }
+  if (checkPath("prisma/schema.prisma")) addCapability("prisma", "prisma/schema.prisma exists");
+  if (directoryExists(cwd, "supabase", checked)) addCapability("supabase", "supabase folder exists");
+  if (directoryExists(cwd, "app/api", checked) || directoryExists(cwd, "pages/api", checked)) {
+    addCapability("api-routes", "app/api or pages/api exists");
+  }
+  const tailwindConfigs = topLevelMatches(/^tailwind\.config\.(js|mjs|cjs|ts)$/);
+  if (tailwindConfigs.length > 0) addCapability("tailwind", `${tailwindConfigs[0]} exists`);
+  if (topLevelMatches(/^docker-compose\.ya?ml$/).length > 0 || checkPath("Dockerfile")) {
+    addCapability("docker", "docker-compose.yml or Dockerfile exists");
+  }
+  if (files.has("netlify.toml")) {
+    addConfig("netlify.toml");
+    addCapability("netlify", "netlify.toml exists");
+  }
+  if (files.has("pyproject.toml") || files.has("requirements.txt")) addPrimary("python", "Python project files exist");
+  if (existsAny(cwd, ["app/main.py"]) && hasText(path2.join(cwd, "app/main.py"), "FastAPI"))
+    addPrimary("fastapi", "app/main.py imports FastAPI");
+  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path2.join(cwd, "app.py"), "Flask"))
+    addPrimary("flask", "Flask app entrypoint detected");
+  if (files.has("composer.json")) addPrimary("php", "composer.json exists");
+  if (files.has("artisan")) addPrimary("laravel", "artisan exists");
+  if (files.has("go.mod")) addPrimary("go", "go.mod exists");
+  if (files.has("Cargo.toml")) addPrimary("rust", "Cargo.toml exists");
+  if (hasDependency(packageJson, "electron")) addPrimary("electron", "package.json depends on electron");
+  if (packageJson?.bin) addPrimary("node-cli", "package.json defines bin");
+  const primaryStack = pickPrimaryStack(primaryCandidates);
+  const orderedCapabilities = orderLabels(
+    [.../* @__PURE__ */ new Set([...capabilities, ...primaryCandidates])].filter((label) => label !== primaryStack)
+  );
+  const workspaceHints = primaryStack === "generic" ? findWorkspaceHints(cwd) : [];
+  if (primaryStack === "generic") {
+    reasoning.push("generic: no supported stack markers were found");
+    if (workspaceHints.length > 0) {
+      reasoning.push(
+        `workspace: found project markers in child folders: ${workspaceHints.map((hint) => hint.path).join(", ")}`
+      );
+    }
+  }
+  return {
+    cwd,
+    primaryStack,
+    capabilities: orderedCapabilities,
+    detected: primaryStack === "generic" ? [] : [primaryStack, ...orderedCapabilities],
+    workspaceHints,
+    filesChecked: [...checked].sort(),
+    dependencies: [...packageDependencies(packageJson)].sort(),
+    configFiles: [...configFiles].sort(),
+    reasoning
+  };
+}
+function pickPrimaryStack(candidates) {
+  const priority = [
+    "monorepo-turborepo",
+    "monorepo-pnpm",
+    "chrome-extension",
+    "nextjs",
+    "vite",
+    "node-api",
+    "electron",
+    "fastapi",
+    "flask",
+    "laravel",
+    "go",
+    "rust",
+    "python",
+    "php",
+    "react",
+    "node-cli"
+  ];
+  return priority.find((label) => candidates.has(label)) ?? "generic";
+}
+function orderLabels(labels) {
+  const priority = [
+    "react",
+    "tailwind",
+    "prisma",
+    "supabase",
+    "api-routes",
+    "docker",
+    "netlify",
+    "nextjs",
+    "vite",
+    "node-api",
+    "chrome-extension",
+    "monorepo-turborepo",
+    "monorepo-pnpm"
+  ];
+  return labels.sort((a, b) => {
+    const aIndex = priority.includes(a) ? priority.indexOf(a) : priority.length;
+    const bIndex = priority.includes(b) ? priority.indexOf(b) : priority.length;
+    return aIndex - bIndex || a.localeCompare(b);
+  });
+}
+function directoryExists(cwd, relativePath, checked = /* @__PURE__ */ new Set()) {
+  checked.add(relativePath);
+  try {
+    return fs2.statSync(path2.join(cwd, relativePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function findWorkspaceHints(cwd) {
+  const ignored = /* @__PURE__ */ new Set([".git", ".next", "dist", "build", "node_modules", "vendor", "target"]);
+  let entries;
+  try {
+    entries = fs2.readdirSync(cwd, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.filter((entry) => entry.isDirectory() && !ignored.has(entry.name)).map((entry) => childProjectHint(cwd, entry.name)).filter((hint) => Boolean(hint)).slice(0, 8);
+}
+function childProjectHint(cwd, name) {
+  const child = path2.join(cwd, name);
+  const files = listTopLevelFiles(child);
+  const packageJson = readJsonSafe(path2.join(child, "package.json"));
+  const evidence = [];
+  const candidates = /* @__PURE__ */ new Set();
+  if (files.has("turbo.json")) addHint(candidates, evidence, "monorepo-turborepo", "turbo.json");
+  if (files.has("pnpm-workspace.yaml")) addHint(candidates, evidence, "monorepo-pnpm", "pnpm-workspace.yaml");
+  const manifest = readJsonSafe(path2.join(child, "manifest.json"));
+  if (manifest?.manifest_version) addHint(candidates, evidence, "chrome-extension", "manifest.json");
+  if (hasDependency(packageJson, "next") || hasMatchingFile(files, /^next\.config\.(js|mjs|cjs|ts)$/)) {
+    addHint(candidates, evidence, "nextjs", hasDependency(packageJson, "next") ? "package.json next" : "next.config.*");
+  }
+  if (hasDependency(packageJson, "vite") || hasMatchingFile(files, /^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/)) {
+    addHint(candidates, evidence, "vite", hasDependency(packageJson, "vite") ? "package.json vite" : "vite.config.*");
+  }
+  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
+    addHint(candidates, evidence, "node-api", "package.json API dependency");
+  }
+  if (hasDependency(packageJson, "react")) addHint(candidates, evidence, "react", "package.json react");
+  if (packageJson?.bin) addHint(candidates, evidence, "node-cli", "package.json bin");
+  if (files.has("pyproject.toml") || files.has("requirements.txt"))
+    addHint(candidates, evidence, "python", "Python project files");
+  if (files.has("composer.json")) addHint(candidates, evidence, "php", "composer.json");
+  if (files.has("go.mod")) addHint(candidates, evidence, "go", "go.mod");
+  if (files.has("Cargo.toml")) addHint(candidates, evidence, "rust", "Cargo.toml");
+  const stack = pickPrimaryStack(candidates);
+  if (stack === "generic") return null;
+  return { path: name, stack, evidence };
+}
+function addHint(candidates, evidence, stack, reason) {
+  candidates.add(stack);
+  evidence.push(reason);
+}
+function hasMatchingFile(files, pattern) {
+  return [...files].some((file2) => pattern.test(file2));
+}
+function detectPackageManager(cwd, stack) {
+  const files = listTopLevelFiles(cwd);
+  if (files.has("pnpm-workspace.yaml")) return "pnpm";
+  if (files.has("pnpm-lock.yaml")) return "pnpm";
+  if (files.has("yarn.lock")) return "yarn";
+  if (stack.includes("laravel") || files.has("composer.json")) return "composer";
+  if (stack.includes("go")) return "go";
+  if (stack.includes("rust")) return "cargo";
+  if (stack.includes("python") || files.has("pyproject.toml") || files.has("requirements.txt")) return "python";
+  return "npm";
+}
+function detectTestCommand(cwd, packageJson, stack) {
+  if (packageJson?.scripts?.test) return `${packageManagerCommand(cwd)} test`;
+  if (stack.includes("laravel")) return "php artisan test";
+  if (stack.includes("go")) return "go test ./...";
+  if (stack.includes("rust")) return "cargo test";
+  if (stack.includes("python")) return "python -m pytest";
+  return "document the test command";
+}
+function detectBuildCommand(cwd, packageJson, stack) {
+  if (packageJson?.scripts?.build) return `${packageManagerCommand(cwd)} run build`;
+  if (stack.includes("laravel")) return "composer install && php artisan test";
+  if (stack.includes("go")) return "go build ./...";
+  if (stack.includes("rust")) return "cargo build";
+  if (stack.includes("python")) return "python -m compileall .";
+  return "document the build command";
+}
+function launchTargetFor(template) {
+  const launchTargets = {
+    "landing-page": "Netlify",
+    fastapi: "Docker or Render",
+    flask: "Docker or Render",
+    laravel: "Laravel hosting",
+    "go-cli": "GitHub Releases",
+    "rust-cli": "GitHub Releases",
+    electron: "GitHub Releases"
+  };
+  return launchTargets[template] ?? "GitHub";
+}
+
+// src/utils/logger.ts
+import chalk from "chalk";
+import ora from "ora";
+var logger = {
+  info(message) {
+    console.log(chalk.cyan(message));
+  },
+  success(message) {
+    console.log(chalk.green(message));
+  },
+  warn(message) {
+    console.log(chalk.yellow(message));
+  },
+  error(message) {
+    console.error(chalk.red(message));
+  },
+  muted(message) {
+    console.log(chalk.gray(message));
+  }
+};
+
+// src/workflow/packs.ts
+import path3 from "path";
+
+// src/templates/agent-files.ts
 function writeAgentFiles(cwd, profile) {
   writeFile(cwd, "AGENTS.md", agentsMd(profile));
   writeFile(cwd, "CLAUDE.md", claudeMd(profile));
@@ -448,595 +862,7 @@ function titleize(value) {
   return value.split(/[-_\s]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-// src/constants.ts
-var VERSION = "0.1.0";
-var SUPPORTED_TEMPLATES = [
-  "chrome-extension",
-  "nextjs",
-  "landing-page",
-  "node-cli",
-  "fastapi",
-  "flask",
-  "laravel",
-  "go-cli",
-  "rust-cli",
-  "electron"
-];
-var SUPPORTED_PACKS = [
-  "core",
-  "chrome-extension",
-  "nextjs",
-  "netlify",
-  "security",
-  "github",
-  "python",
-  "php",
-  "go",
-  "rust",
-  "electron"
-];
-
-// src/doctor.ts
-import fs3 from "fs";
-import path3 from "path";
-
-// src/profile.ts
-import fs2 from "fs";
-import path2 from "path";
-function buildProfile(template, projectName) {
-  const stackByTemplate = {
-    "chrome-extension": ["chrome-extension", "javascript", "browser"],
-    nextjs: ["nextjs", "react", "typescript"],
-    "landing-page": ["static-site", "netlify"],
-    "node-cli": ["node-cli", "javascript"],
-    fastapi: ["fastapi", "python", "api"],
-    flask: ["flask", "python", "api"],
-    laravel: ["laravel", "php", "web"],
-    "go-cli": ["go", "cli"],
-    "rust-cli": ["rust", "cli"],
-    electron: ["electron", "javascript", "desktop"]
-  };
-  const packageManagerByTemplate = {
-    fastapi: "python",
-    flask: "python",
-    laravel: "composer",
-    "go-cli": "go",
-    "rust-cli": "cargo"
-  };
-  const testCommandByTemplate = {
-    "landing-page": "npm run check",
-    fastapi: "python -m pytest",
-    flask: "python -m pytest",
-    laravel: "php artisan test",
-    "go-cli": "go test ./...",
-    "rust-cli": "cargo test"
-  };
-  const buildCommandByTemplate = {
-    "chrome-extension": "npm run package",
-    fastapi: "python -m compileall app tests",
-    flask: "python -m compileall app tests",
-    laravel: "composer install && php artisan test",
-    "go-cli": "go build ./...",
-    "rust-cli": "cargo build"
-  };
-  return {
-    name: projectName,
-    template,
-    stack: stackByTemplate[template] ?? ["generic"],
-    packageManager: packageManagerByTemplate[template] ?? "npm",
-    testCommand: testCommandByTemplate[template] ?? "npm test",
-    buildCommand: buildCommandByTemplate[template] ?? "npm run build",
-    launchTarget: launchTargetFor(template)
-  };
-}
-function detectProject(cwd) {
-  const packageJson = readJsonSafe(path2.join(cwd, "package.json"));
-  const name = (packageJson == null ? void 0 : packageJson.name) ?? path2.basename(cwd);
-  const detection = analyzeProject(cwd, packageJson);
-  const primaryStack = detection.primaryStack;
-  const capabilities = detection.capabilities;
-  const stack = primaryStack === "generic" ? [] : [primaryStack, ...capabilities];
-  return {
-    name,
-    template: primaryStack,
-    primaryStack,
-    capabilities,
-    stack,
-    detection,
-    packageManager: detectPackageManager(cwd, stack),
-    testCommand: detectTestCommand(cwd, packageJson, stack),
-    buildCommand: detectBuildCommand(cwd, packageJson, stack),
-    launchTarget: stack.includes("netlify") ? "Netlify" : "GitHub"
-  };
-}
-function defaultPacksForTemplate(template) {
-  return {
-    "chrome-extension": ["chrome-extension"],
-    nextjs: ["nextjs"],
-    "landing-page": ["netlify"],
-    "node-cli": ["github"],
-    fastapi: ["python"],
-    flask: ["python"],
-    laravel: ["php"],
-    "go-cli": ["go", "github"],
-    "rust-cli": ["rust", "github"],
-    electron: ["electron", "github"]
-  }[template] ?? [];
-}
-function packageManagerCommand(cwd) {
-  const files = listTopLevelFiles(cwd);
-  if (files.has("pnpm-workspace.yaml")) return "pnpm";
-  if (files.has("pnpm-lock.yaml")) return "pnpm";
-  if (files.has("yarn.lock")) return "yarn";
-  return "npm";
-}
-function hasDependency(packageJson, dependency) {
-  return packageDependencies(packageJson).has(dependency);
-}
-function hasAnyDependency(packageJson, dependencies) {
-  const available = packageDependencies(packageJson);
-  return dependencies.some((dependency) => available.has(dependency));
-}
-function packageDependencies(packageJson) {
-  const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
-  const entries = sections.flatMap((section) => Object.keys((packageJson == null ? void 0 : packageJson[section]) ?? {}));
-  return new Set(entries);
-}
-function analyzeProject(cwd, packageJson) {
-  const files = listTopLevelFiles(cwd);
-  const checked = /* @__PURE__ */ new Set([
-    "package.json",
-    "manifest.json",
-    "public/manifest.json",
-    "src/manifest.json",
-    "next.config.*",
-    "vite.config.*",
-    "tailwind.config.*",
-    "prisma/schema.prisma",
-    "supabase",
-    "app/api",
-    "pages/api",
-    "docker-compose.yml",
-    "docker-compose.yaml",
-    "Dockerfile",
-    "turbo.json",
-    "pnpm-workspace.yaml"
-  ]);
-  const configFiles = /* @__PURE__ */ new Set();
-  const reasoning = [];
-  const detected = /* @__PURE__ */ new Set();
-  const primaryCandidates = /* @__PURE__ */ new Set();
-  const capabilities = /* @__PURE__ */ new Set();
-  const checkPath = (relativePath) => {
-    checked.add(relativePath);
-    return fs2.existsSync(path2.join(cwd, relativePath));
-  };
-  const addConfig = (relativePath) => {
-    configFiles.add(relativePath);
-    checked.add(relativePath);
-  };
-  const addPrimary = (label, reason) => {
-    detected.add(label);
-    primaryCandidates.add(label);
-    reasoning.push(`${label}: ${reason}`);
-  };
-  const addCapability = (label, reason) => {
-    detected.add(label);
-    capabilities.add(label);
-    reasoning.push(`${label}: ${reason}`);
-  };
-  const topLevelMatches = (pattern) => {
-    const matches = [...files].filter((file2) => pattern.test(file2)).sort();
-    for (const match of matches) addConfig(match);
-    return matches;
-  };
-  if (topLevelMatches(/^turbo\.json$/).length > 0) addPrimary("monorepo-turborepo", "turbo.json exists");
-  if (topLevelMatches(/^pnpm-workspace\.yaml$/).length > 0) addPrimary("monorepo-pnpm", "pnpm-workspace.yaml exists");
-  const manifestFiles = ["manifest.json", "public/manifest.json", "src/manifest.json"].filter(
-    (file2) => checkPath(file2)
-  );
-  const chromeManifest = manifestFiles.find((file2) => {
-    var _a;
-    return (_a = readJsonSafe(path2.join(cwd, file2))) == null ? void 0 : _a.manifest_version;
-  });
-  if (chromeManifest) {
-    addConfig(chromeManifest);
-    addPrimary("chrome-extension", `${chromeManifest} contains manifest_version`);
-  }
-  const nextConfigs = topLevelMatches(/^next\.config\.(js|mjs|cjs|ts)$/);
-  if (nextConfigs.length > 0 || hasDependency(packageJson, "next")) {
-    addPrimary("nextjs", nextConfigs.length > 0 ? `${nextConfigs[0]} exists` : "package.json depends on next");
-  }
-  const viteConfigs = topLevelMatches(/^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/);
-  if (viteConfigs.length > 0 || hasDependency(packageJson, "vite")) {
-    addPrimary("vite", viteConfigs.length > 0 ? `${viteConfigs[0]} exists` : "package.json depends on vite");
-  }
-  if (hasDependency(packageJson, "react")) {
-    addCapability("react", "package.json depends on react");
-    primaryCandidates.add("react");
-  }
-  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
-    addPrimary("node-api", "package.json depends on express, fastify, or hono");
-  }
-  if (checkPath("prisma/schema.prisma")) addCapability("prisma", "prisma/schema.prisma exists");
-  if (directoryExists(cwd, "supabase", checked)) addCapability("supabase", "supabase folder exists");
-  if (directoryExists(cwd, "app/api", checked) || directoryExists(cwd, "pages/api", checked)) {
-    addCapability("api-routes", "app/api or pages/api exists");
-  }
-  const tailwindConfigs = topLevelMatches(/^tailwind\.config\.(js|mjs|cjs|ts)$/);
-  if (tailwindConfigs.length > 0) addCapability("tailwind", `${tailwindConfigs[0]} exists`);
-  if (topLevelMatches(/^docker-compose\.ya?ml$/).length > 0 || checkPath("Dockerfile")) {
-    addCapability("docker", "docker-compose.yml or Dockerfile exists");
-  }
-  if (files.has("netlify.toml")) {
-    addConfig("netlify.toml");
-    addCapability("netlify", "netlify.toml exists");
-  }
-  if (files.has("pyproject.toml") || files.has("requirements.txt")) addPrimary("python", "Python project files exist");
-  if (existsAny(cwd, ["app/main.py"]) && hasText(path2.join(cwd, "app/main.py"), "FastAPI"))
-    addPrimary("fastapi", "app/main.py imports FastAPI");
-  if (existsAny(cwd, ["app.py", "app/__init__.py"]) && hasText(path2.join(cwd, "app.py"), "Flask"))
-    addPrimary("flask", "Flask app entrypoint detected");
-  if (files.has("composer.json")) addPrimary("php", "composer.json exists");
-  if (files.has("artisan")) addPrimary("laravel", "artisan exists");
-  if (files.has("go.mod")) addPrimary("go", "go.mod exists");
-  if (files.has("Cargo.toml")) addPrimary("rust", "Cargo.toml exists");
-  if (hasDependency(packageJson, "electron")) addPrimary("electron", "package.json depends on electron");
-  if (packageJson == null ? void 0 : packageJson.bin) addPrimary("node-cli", "package.json defines bin");
-  const primaryStack = pickPrimaryStack(primaryCandidates);
-  const orderedCapabilities = orderLabels(
-    [.../* @__PURE__ */ new Set([...capabilities, ...primaryCandidates])].filter((label) => label !== primaryStack)
-  );
-  const workspaceHints = primaryStack === "generic" ? findWorkspaceHints(cwd) : [];
-  if (primaryStack === "generic") {
-    reasoning.push("generic: no supported stack markers were found");
-    if (workspaceHints.length > 0) {
-      reasoning.push(
-        `workspace: found project markers in child folders: ${workspaceHints.map((hint) => hint.path).join(", ")}`
-      );
-    }
-  }
-  return {
-    cwd,
-    primaryStack,
-    capabilities: orderedCapabilities,
-    detected: primaryStack === "generic" ? [] : [primaryStack, ...orderedCapabilities],
-    workspaceHints,
-    filesChecked: [...checked].sort(),
-    dependencies: [...packageDependencies(packageJson)].sort(),
-    configFiles: [...configFiles].sort(),
-    reasoning
-  };
-}
-function pickPrimaryStack(candidates) {
-  const priority = [
-    "monorepo-turborepo",
-    "monorepo-pnpm",
-    "chrome-extension",
-    "nextjs",
-    "vite",
-    "node-api",
-    "electron",
-    "fastapi",
-    "flask",
-    "laravel",
-    "go",
-    "rust",
-    "python",
-    "php",
-    "react",
-    "node-cli"
-  ];
-  return priority.find((label) => candidates.has(label)) ?? "generic";
-}
-function orderLabels(labels) {
-  const priority = [
-    "react",
-    "tailwind",
-    "prisma",
-    "supabase",
-    "api-routes",
-    "docker",
-    "netlify",
-    "nextjs",
-    "vite",
-    "node-api",
-    "chrome-extension",
-    "monorepo-turborepo",
-    "monorepo-pnpm"
-  ];
-  return labels.sort((a, b) => {
-    const aIndex = priority.includes(a) ? priority.indexOf(a) : priority.length;
-    const bIndex = priority.includes(b) ? priority.indexOf(b) : priority.length;
-    return aIndex - bIndex || a.localeCompare(b);
-  });
-}
-function directoryExists(cwd, relativePath, checked = /* @__PURE__ */ new Set()) {
-  checked.add(relativePath);
-  try {
-    return fs2.statSync(path2.join(cwd, relativePath)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-function findWorkspaceHints(cwd) {
-  const ignored = /* @__PURE__ */ new Set([".git", ".next", "dist", "build", "node_modules", "vendor", "target"]);
-  let entries;
-  try {
-    entries = fs2.readdirSync(cwd, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return entries.filter((entry) => entry.isDirectory() && !ignored.has(entry.name)).map((entry) => childProjectHint(cwd, entry.name)).filter((hint) => Boolean(hint)).slice(0, 8);
-}
-function childProjectHint(cwd, name) {
-  const child = path2.join(cwd, name);
-  const files = listTopLevelFiles(child);
-  const packageJson = readJsonSafe(path2.join(child, "package.json"));
-  const evidence = [];
-  const candidates = /* @__PURE__ */ new Set();
-  if (files.has("turbo.json")) addHint(candidates, evidence, "monorepo-turborepo", "turbo.json");
-  if (files.has("pnpm-workspace.yaml")) addHint(candidates, evidence, "monorepo-pnpm", "pnpm-workspace.yaml");
-  const manifest = readJsonSafe(path2.join(child, "manifest.json"));
-  if (manifest == null ? void 0 : manifest.manifest_version) addHint(candidates, evidence, "chrome-extension", "manifest.json");
-  if (hasDependency(packageJson, "next") || hasMatchingFile(files, /^next\.config\.(js|mjs|cjs|ts)$/)) {
-    addHint(candidates, evidence, "nextjs", hasDependency(packageJson, "next") ? "package.json next" : "next.config.*");
-  }
-  if (hasDependency(packageJson, "vite") || hasMatchingFile(files, /^vite\.config\.(js|mjs|cjs|ts|mts|cts)$/)) {
-    addHint(candidates, evidence, "vite", hasDependency(packageJson, "vite") ? "package.json vite" : "vite.config.*");
-  }
-  if (hasAnyDependency(packageJson, ["express", "fastify", "hono"])) {
-    addHint(candidates, evidence, "node-api", "package.json API dependency");
-  }
-  if (hasDependency(packageJson, "react")) addHint(candidates, evidence, "react", "package.json react");
-  if (packageJson == null ? void 0 : packageJson.bin) addHint(candidates, evidence, "node-cli", "package.json bin");
-  if (files.has("pyproject.toml") || files.has("requirements.txt"))
-    addHint(candidates, evidence, "python", "Python project files");
-  if (files.has("composer.json")) addHint(candidates, evidence, "php", "composer.json");
-  if (files.has("go.mod")) addHint(candidates, evidence, "go", "go.mod");
-  if (files.has("Cargo.toml")) addHint(candidates, evidence, "rust", "Cargo.toml");
-  const stack = pickPrimaryStack(candidates);
-  if (stack === "generic") return null;
-  return { path: name, stack, evidence };
-}
-function addHint(candidates, evidence, stack, reason) {
-  candidates.add(stack);
-  evidence.push(reason);
-}
-function hasMatchingFile(files, pattern) {
-  return [...files].some((file2) => pattern.test(file2));
-}
-function detectPackageManager(cwd, stack) {
-  const files = listTopLevelFiles(cwd);
-  if (files.has("pnpm-workspace.yaml")) return "pnpm";
-  if (files.has("pnpm-lock.yaml")) return "pnpm";
-  if (files.has("yarn.lock")) return "yarn";
-  if (stack.includes("laravel") || files.has("composer.json")) return "composer";
-  if (stack.includes("go")) return "go";
-  if (stack.includes("rust")) return "cargo";
-  if (stack.includes("python") || files.has("pyproject.toml") || files.has("requirements.txt")) return "python";
-  return "npm";
-}
-function detectTestCommand(cwd, packageJson, stack) {
-  var _a;
-  if ((_a = packageJson == null ? void 0 : packageJson.scripts) == null ? void 0 : _a.test) return `${packageManagerCommand(cwd)} test`;
-  if (stack.includes("laravel")) return "php artisan test";
-  if (stack.includes("go")) return "go test ./...";
-  if (stack.includes("rust")) return "cargo test";
-  if (stack.includes("python")) return "python -m pytest";
-  return "document the test command";
-}
-function detectBuildCommand(cwd, packageJson, stack) {
-  var _a;
-  if ((_a = packageJson == null ? void 0 : packageJson.scripts) == null ? void 0 : _a.build) return `${packageManagerCommand(cwd)} run build`;
-  if (stack.includes("laravel")) return "composer install && php artisan test";
-  if (stack.includes("go")) return "go build ./...";
-  if (stack.includes("rust")) return "cargo build";
-  if (stack.includes("python")) return "python -m compileall .";
-  return "document the build command";
-}
-function launchTargetFor(template) {
-  const launchTargets = {
-    "landing-page": "Netlify",
-    fastapi: "Docker or Render",
-    flask: "Docker or Render",
-    laravel: "Laravel hosting",
-    "go-cli": "GitHub Releases",
-    "rust-cli": "GitHub Releases",
-    electron: "GitHub Releases"
-  };
-  return launchTargets[template] ?? "GitHub";
-}
-
-// src/doctor.ts
-function runDoctor(cwd, options = {}) {
-  const audit = auditRepo(cwd);
-  if (options.json) {
-    console.log(JSON.stringify(audit, null, 2));
-  } else {
-    printAudit(audit, options);
-  }
-  if (options.strict && (audit.failures.length > 0 || audit.score < 85)) {
-    process.exitCode = 1;
-  }
-}
-function auditRepo(cwd) {
-  const packageInfo = readJsonSafe(path3.join(cwd, "package.json"));
-  const config = readJsonSafe(path3.join(cwd, ".agentkick.json"));
-  const profile = detectProject(cwd);
-  const checks = [
-    requiredFile(cwd, "AGENTS.md", "master repo intelligence"),
-    requiredFile(cwd, "CLAUDE.md", "Claude memory"),
-    requiredFile(cwd, ".github/copilot-instructions.md", "Copilot root instructions"),
-    requiredFile(cwd, ".github/instructions/security.instructions.md", "Copilot security instructions"),
-    requiredFile(cwd, ".claude/skills/review/SKILL.md", "Claude review skill"),
-    requiredFile(cwd, ".claude/skills/security-scan/SKILL.md", "Claude security skill"),
-    requiredFile(cwd, ".agents/skills/review/SKILL.md", "generic review skill"),
-    requiredFile(cwd, ".codex/agents/reviewer.md", "Codex reviewer agent"),
-    requiredFile(cwd, ".cursor/rules/agentkick.mdc", "Cursor rules"),
-    requiredFile(cwd, ".agentkick.json", "AgentKick config")
-  ];
-  const warnings = [
-    ...qualityWarnings(cwd),
-    ...commandWarnings(packageInfo, config),
-    ...findRiskyMcp(cwd),
-    ...ciWarnings(cwd)
-  ];
-  const failures = checks.filter((check) => !check.ok).map((check) => check.message);
-  const score = Math.max(0, 100 - failures.length * 10 - warnings.length * 4);
-  return {
-    score,
-    status: failures.length === 0 && score >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
-    detectedStack: profile.primaryStack ?? profile.template,
-    detectedCapabilities: profile.capabilities ?? [],
-    detectionDebug: profile.detection ?? {
-      cwd,
-      primaryStack: profile.primaryStack ?? profile.template,
-      capabilities: profile.capabilities ?? [],
-      detected: profile.stack,
-      workspaceHints: [],
-      filesChecked: [],
-      dependencies: [],
-      configFiles: [],
-      reasoning: []
-    },
-    checks,
-    warnings,
-    failures,
-    suggestions: suggestionsFor(failures, warnings)
-  };
-}
-function printAudit(audit, options) {
-  console.log("AgentKick doctor");
-  console.log("");
-  console.log(`Detected stack: ${audit.detectedStack}`);
-  if (audit.detectedCapabilities.length > 0)
-    console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
-  if (audit.detectedStack === "generic") {
-    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
-    printWorkspaceHints(audit.detectionDebug);
-  }
-  console.log("");
-  console.log(`AI-readiness score: ${audit.score}/100`);
-  console.log(`Status: ${audit.status}`);
-  if (options.strict) console.log("Mode: strict");
-  console.log("");
-  for (const check of audit.checks) {
-    console.log(`${check.ok ? "PASS" : "FAIL"} ${check.label}: ${check.message}`);
-  }
-  for (const warning of audit.warnings) {
-    console.log(`WARN ${warning}`);
-  }
-  if (audit.suggestions.length > 0) {
-    console.log("");
-    console.log("Suggested fixes:");
-    for (const suggestion of audit.suggestions) console.log(`- ${suggestion}`);
-  }
-  if (options.debug) printDetectionDebug(audit.detectionDebug);
-}
-function requiredFile(cwd, relativePath, label) {
-  const fullPath = path3.join(cwd, relativePath);
-  if (!fs3.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
-  const content = fs3.readFileSync(fullPath, "utf8");
-  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
-  return { ok: true, label, message: relativePath };
-}
-function qualityWarnings(cwd) {
-  const warnings = [];
-  const agents = readFileSafe(path3.join(cwd, "AGENTS.md"));
-  if (agents && !agents.includes("Forbidden")) warnings.push("AGENTS.md should define forbidden modifications.");
-  if (agents && !agents.includes("Test:")) warnings.push("AGENTS.md should document test commands.");
-  if (agents && !agents.includes("Build:")) warnings.push("AGENTS.md should document build commands.");
-  const claude = readFileSafe(path3.join(cwd, "CLAUDE.md"));
-  if (claude && claude.split(/\r?\n/).length > 200) warnings.push("CLAUDE.md should stay under 200 lines.");
-  return warnings;
-}
-function commandWarnings(packageInfo, config) {
-  const warnings = [];
-  if (packageInfo == null ? void 0 : packageInfo.scripts) {
-    if (!packageInfo.scripts.test && (!(config == null ? void 0 : config.testCommand) || config.testCommand.startsWith("document ")))
-      warnings.push("No test command documented.");
-    if (!packageInfo.scripts.build && (!(config == null ? void 0 : config.buildCommand) || config.buildCommand.startsWith("document ")))
-      warnings.push("No build command documented.");
-  } else if (!(config == null ? void 0 : config.testCommand) || config.testCommand.startsWith("document ")) {
-    warnings.push("No package scripts or documented test command detected.");
-  }
-  return warnings;
-}
-function ciWarnings(cwd) {
-  const workflowDir = path3.join(cwd, ".github", "workflows");
-  if (!fs3.existsSync(workflowDir)) return ["No GitHub Actions workflow detected."];
-  return [];
-}
-function findRiskyMcp(cwd) {
-  const warnings = [];
-  for (const fileName of [".mcp.json", "mcp.json"]) {
-    const fullPath = path3.join(cwd, fileName);
-    if (!fs3.existsSync(fullPath)) continue;
-    const content = fs3.readFileSync(fullPath, "utf8");
-    if (content.includes("C:\\\\") || content.includes("/") && content.includes("filesystem")) {
-      warnings.push(`MCP safety: ${fileName} may allow broad filesystem access. Restrict it to this repo if possible.`);
-    }
-    if (content.includes("*") && content.includes("command"))
-      warnings.push(`MCP safety: ${fileName} may allow wildcard command execution.`);
-    if (content.includes("env") && content.includes("SECRET"))
-      warnings.push(`MCP safety: ${fileName} may expose secret-like environment variables.`);
-  }
-  return warnings;
-}
-function suggestionsFor(failures, warnings) {
-  const suggestions = [];
-  if (failures.some((item) => item.includes("AGENTS.md")))
-    suggestions.push("Run agentkick init to regenerate the master repo intelligence layer.");
-  if (failures.some((item) => item.includes(".claude/skills")))
-    suggestions.push("Regenerate Claude skills with agentkick init.");
-  if (failures.some((item) => item.includes(".codex/agents")))
-    suggestions.push("Regenerate Codex specialist agents with agentkick init.");
-  if (warnings.some((item) => item.includes("MCP safety")))
-    suggestions.push("Restrict MCP tools to repo-scoped paths and explicit allowlists.");
-  if (warnings.some((item) => item.includes("workflow")))
-    suggestions.push("Add a CI workflow or run agentkick add github.");
-  return [...new Set(suggestions)];
-}
-function readFileSafe(file2) {
-  try {
-    return fs3.readFileSync(file2, "utf8");
-  } catch {
-    return "";
-  }
-}
-function printDetectionDebug(detection) {
-  console.log("");
-  console.log("Stack detection debug:");
-  console.log(`Current working directory: ${detection.cwd}`);
-  console.log("Files checked:");
-  printList(detection.filesChecked);
-  console.log("package.json dependencies found:");
-  printList(detection.dependencies);
-  console.log("Config files found:");
-  printList(detection.configFiles);
-  console.log("Final detection reasoning:");
-  printList(detection.reasoning);
-}
-function printWorkspaceHints(detection) {
-  if (detection.workspaceHints.length === 0) return;
-  console.log("");
-  console.log("This looks like a workspace folder, not a single app repo.");
-  console.log("Run AgentKick inside one project folder, for example:");
-  for (const hint of detection.workspaceHints.slice(0, 5)) {
-    console.log(`  cd ${hint.path}  # ${hint.stack}`);
-  }
-}
-function printList(items) {
-  if (!items || items.length === 0) {
-    console.log("- none");
-    return;
-  }
-  for (const item of items) console.log(`- ${item}`);
-}
-
-// src/packs.ts
-import path4 from "path";
+// src/workflow/packs.ts
 var PACKS = {
   core(profile) {
     return [
@@ -1170,9 +996,8 @@ var PACKS = {
   ]
 };
 function writePack(cwd, pack, profile, options = {}) {
-  var _a;
   if (!isPack(pack)) throw new Error(`pack writer missing for "${pack}"`);
-  const entries = (_a = PACKS[pack]) == null ? void 0 : _a.call(PACKS, profile);
+  const entries = PACKS[pack]?.(profile);
   if (!entries) throw new Error(`pack writer missing for "${pack}"`);
   for (const entry of entries) {
     if (entry.kind === "command") writeClaudeCommand(cwd, entry.name, entry.body);
@@ -1208,7 +1033,7 @@ ${body}
 `);
 }
 function updateAgentkickConfig(cwd, patch) {
-  const filePath = path4.join(cwd, ".agentkick.json");
+  const filePath = path3.join(cwd, ".agentkick.json");
   const current = readJsonSafe(filePath) ?? {};
   const packs = /* @__PURE__ */ new Set([...current.packs ?? [], ...patch.addedPacks ?? []]);
   current.packs = [...packs].sort();
@@ -1218,7 +1043,293 @@ function isPack(value) {
   return Object.prototype.hasOwnProperty.call(PACKS, value);
 }
 
-// src/templates.ts
+// src/commands/shared.ts
+function applyWriteMode(program, options = {}) {
+  const globalOptions = program.opts();
+  setWriteMode({ dryRun: Boolean(options.dryRun ?? globalOptions.dryRun) });
+}
+
+// src/commands/add.ts
+function registerAddCommand(program, context) {
+  program.command("add").description("Add an AgentKick command/skill pack.").argument("<pack>", `pack: ${SUPPORTED_PACKS.join(", ")}`).action((pack) => {
+    applyWriteMode(program);
+    if (!isPack2(pack)) throw new Error(`unknown pack "${pack}". Supported: ${SUPPORTED_PACKS.join(", ")}`);
+    const profile = detectProject(context.cwd);
+    writePack(context.cwd, pack, profile);
+    logger.success(`Added ${pack} pack.`);
+  });
+}
+function isPack2(value) {
+  return SUPPORTED_PACKS.includes(value);
+}
+
+// src/doctor/doctor-engine.ts
+import fs3 from "fs";
+import path4 from "path";
+function runDoctor(cwd, options = {}) {
+  const audit = auditRepo(cwd);
+  if (options.json) {
+    console.log(JSON.stringify(audit, null, 2));
+  } else {
+    printAudit(audit, options);
+  }
+  if (options.strict && (audit.failures.length > 0 || audit.score < 85)) {
+    process.exitCode = 1;
+  }
+}
+function auditRepo(cwd) {
+  const packageInfo = readJsonSafe(path4.join(cwd, "package.json"));
+  const config = readJsonSafe(path4.join(cwd, ".agentkick.json"));
+  const profile = detectProject(cwd);
+  const checks = [
+    requiredFile(cwd, "AGENTS.md", "master repo intelligence"),
+    requiredFile(cwd, "CLAUDE.md", "Claude memory"),
+    requiredFile(cwd, ".github/copilot-instructions.md", "Copilot root instructions"),
+    requiredFile(cwd, ".github/instructions/security.instructions.md", "Copilot security instructions"),
+    requiredFile(cwd, ".claude/skills/review/SKILL.md", "Claude review skill"),
+    requiredFile(cwd, ".claude/skills/security-scan/SKILL.md", "Claude security skill"),
+    requiredFile(cwd, ".agents/skills/review/SKILL.md", "generic review skill"),
+    requiredFile(cwd, ".codex/agents/reviewer.md", "Codex reviewer agent"),
+    requiredFile(cwd, ".cursor/rules/agentkick.mdc", "Cursor rules"),
+    requiredFile(cwd, ".agentkick.json", "AgentKick config")
+  ];
+  const warnings = [
+    ...qualityWarnings(cwd),
+    ...commandWarnings(packageInfo, config),
+    ...findRiskyMcp(cwd),
+    ...ciWarnings(cwd)
+  ];
+  const failures = checks.filter((check) => !check.ok).map((check) => check.message);
+  const score = Math.max(0, 100 - failures.length * 10 - warnings.length * 4);
+  return {
+    score,
+    status: failures.length === 0 && score >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
+    detectedStack: profile.primaryStack ?? profile.template,
+    detectedCapabilities: profile.capabilities ?? [],
+    detectionDebug: profile.detection ?? {
+      cwd,
+      primaryStack: profile.primaryStack ?? profile.template,
+      capabilities: profile.capabilities ?? [],
+      detected: profile.stack,
+      workspaceHints: [],
+      filesChecked: [],
+      dependencies: [],
+      configFiles: [],
+      reasoning: []
+    },
+    checks,
+    warnings,
+    failures,
+    suggestions: suggestionsFor(failures, warnings)
+  };
+}
+function printAudit(audit, options) {
+  console.log("AgentKick doctor");
+  console.log("");
+  console.log(`Detected stack: ${audit.detectedStack}`);
+  if (audit.detectedCapabilities.length > 0)
+    console.log(`Detected capabilities: ${audit.detectedCapabilities.join(", ")}`);
+  if (audit.detectedStack === "generic") {
+    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
+    printWorkspaceHints(audit.detectionDebug);
+  }
+  console.log("");
+  console.log(`AI-readiness score: ${audit.score}/100`);
+  console.log(`Status: ${audit.status}`);
+  if (options.strict) console.log("Mode: strict");
+  console.log("");
+  for (const check of audit.checks) {
+    console.log(`${check.ok ? "PASS" : "FAIL"} ${check.label}: ${check.message}`);
+  }
+  for (const warning of audit.warnings) {
+    console.log(`WARN ${warning}`);
+  }
+  if (audit.suggestions.length > 0) {
+    console.log("");
+    console.log("Suggested fixes:");
+    for (const suggestion of audit.suggestions) console.log(`- ${suggestion}`);
+  }
+  if (options.debug) printDetectionDebug(audit.detectionDebug);
+}
+function requiredFile(cwd, relativePath, label) {
+  const fullPath = path4.join(cwd, relativePath);
+  if (!fs3.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
+  const content = fs3.readFileSync(fullPath, "utf8");
+  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
+  return { ok: true, label, message: relativePath };
+}
+function qualityWarnings(cwd) {
+  const warnings = [];
+  const agents = readFileSafe(path4.join(cwd, "AGENTS.md"));
+  if (agents && !agents.includes("Forbidden")) warnings.push("AGENTS.md should define forbidden modifications.");
+  if (agents && !agents.includes("Test:")) warnings.push("AGENTS.md should document test commands.");
+  if (agents && !agents.includes("Build:")) warnings.push("AGENTS.md should document build commands.");
+  const claude = readFileSafe(path4.join(cwd, "CLAUDE.md"));
+  if (claude && claude.split(/\r?\n/).length > 200) warnings.push("CLAUDE.md should stay under 200 lines.");
+  return warnings;
+}
+function commandWarnings(packageInfo, config) {
+  const warnings = [];
+  if (packageInfo?.scripts) {
+    if (!packageInfo.scripts.test && (!config?.testCommand || config.testCommand.startsWith("document ")))
+      warnings.push("No test command documented.");
+    if (!packageInfo.scripts.build && (!config?.buildCommand || config.buildCommand.startsWith("document ")))
+      warnings.push("No build command documented.");
+  } else if (!config?.testCommand || config.testCommand.startsWith("document ")) {
+    warnings.push("No package scripts or documented test command detected.");
+  }
+  return warnings;
+}
+function ciWarnings(cwd) {
+  const workflowDir = path4.join(cwd, ".github", "workflows");
+  if (!fs3.existsSync(workflowDir)) return ["No GitHub Actions workflow detected."];
+  return [];
+}
+function findRiskyMcp(cwd) {
+  const warnings = [];
+  for (const fileName of [".mcp.json", "mcp.json"]) {
+    const fullPath = path4.join(cwd, fileName);
+    if (!fs3.existsSync(fullPath)) continue;
+    const content = fs3.readFileSync(fullPath, "utf8");
+    if (content.includes("C:\\\\") || content.includes("/") && content.includes("filesystem")) {
+      warnings.push(`MCP safety: ${fileName} may allow broad filesystem access. Restrict it to this repo if possible.`);
+    }
+    if (content.includes("*") && content.includes("command"))
+      warnings.push(`MCP safety: ${fileName} may allow wildcard command execution.`);
+    if (content.includes("env") && content.includes("SECRET"))
+      warnings.push(`MCP safety: ${fileName} may expose secret-like environment variables.`);
+  }
+  return warnings;
+}
+function suggestionsFor(failures, warnings) {
+  const suggestions = [];
+  if (failures.some((item) => item.includes("AGENTS.md")))
+    suggestions.push("Run agentkick init to regenerate the master repo intelligence layer.");
+  if (failures.some((item) => item.includes(".claude/skills")))
+    suggestions.push("Regenerate Claude skills with agentkick init.");
+  if (failures.some((item) => item.includes(".codex/agents")))
+    suggestions.push("Regenerate Codex specialist agents with agentkick init.");
+  if (warnings.some((item) => item.includes("MCP safety")))
+    suggestions.push("Restrict MCP tools to repo-scoped paths and explicit allowlists.");
+  if (warnings.some((item) => item.includes("workflow")))
+    suggestions.push("Add a CI workflow or run agentkick add github.");
+  return [...new Set(suggestions)];
+}
+function readFileSafe(file2) {
+  try {
+    return fs3.readFileSync(file2, "utf8");
+  } catch {
+    return "";
+  }
+}
+function printDetectionDebug(detection) {
+  console.log("");
+  console.log("Stack detection debug:");
+  console.log(`Current working directory: ${detection.cwd}`);
+  console.log("Files checked:");
+  printList(detection.filesChecked);
+  console.log("package.json dependencies found:");
+  printList(detection.dependencies);
+  console.log("Config files found:");
+  printList(detection.configFiles);
+  console.log("Final detection reasoning:");
+  printList(detection.reasoning);
+}
+function printWorkspaceHints(detection) {
+  if (detection.workspaceHints.length === 0) return;
+  console.log("");
+  console.log("This looks like a workspace folder, not a single app repo.");
+  console.log("Run AgentKick inside one project folder, for example:");
+  for (const hint of detection.workspaceHints.slice(0, 5)) {
+    console.log(`  cd ${hint.path}  # ${hint.stack}`);
+  }
+}
+function printList(items) {
+  if (!items || items.length === 0) {
+    console.log("- none");
+    return;
+  }
+  for (const item of items) console.log(`- ${item}`);
+}
+
+// src/commands/doctor.ts
+function registerDoctorCommand(program, context) {
+  program.command("doctor").description("Check AI workflow readiness and stack detection.").option("--strict", "exit non-zero when readiness is blocked or below threshold").option("--json", "print JSON output").option("--debug", "print stack detection reasoning").action((options) => {
+    runDoctor(context.cwd, options);
+  });
+}
+
+// src/commands/focus.ts
+import fs4 from "fs";
+import path5 from "path";
+
+// src/utils/format.ts
+import chalk2 from "chalk";
+function formatStack(profile) {
+  return profile.primaryStack ?? profile.template ?? "generic";
+}
+function printDetectionSummary(profile) {
+  console.log(`Detected stack: ${chalk2.bold(formatStack(profile))}`);
+  if (profile.capabilities?.length) {
+    console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
+  }
+  if (formatStack(profile) === "generic") {
+    console.log(chalk2.yellow("Could not confidently detect stack. Run agentkick doctor --debug to see checked files."));
+    printWorkspaceHints2(profile.detection?.workspaceHints ?? []);
+  }
+}
+function printWorkspaceHints2(hints) {
+  if (hints.length === 0) return;
+  console.log("");
+  console.log(chalk2.yellow("This looks like a workspace folder, not a single app repo."));
+  console.log("Run AgentKick inside one project folder, for example:");
+  for (const hint of hints.slice(0, 5)) {
+    console.log(`  ${chalk2.cyan(`cd ${hint.path}`)}  ${chalk2.gray(`# ${hint.stack}`)}`);
+  }
+}
+
+// src/commands/focus.ts
+function registerFocusCommand(program, context) {
+  program.command("focus").description("Print the minimal project context an agent should load before editing.").argument("[scope]", "optional feature, folder, or task scope").action((scope) => {
+    const profile = detectProject(context.cwd);
+    const candidates = ["AGENTS.md", "CLAUDE.md", ".agentkick.json", "package.json", "README.md", scope].filter(
+      (item) => Boolean(item)
+    );
+    console.log("AgentKick focus");
+    console.log("");
+    console.log(`Scope: ${scope ?? "current task"}`);
+    console.log(`Detected stack: ${formatStack(profile)}`);
+    if (profile.capabilities?.length) console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
+    console.log("");
+    console.log("Load first:");
+    for (const item of uniqueExisting(context.cwd, candidates)) console.log(`- ${item}`);
+    console.log("");
+    console.log("Working rule: keep the agent context limited to the scope, touched files, and repo memory above.");
+  });
+}
+function uniqueExisting(cwd, candidates) {
+  return [...new Set(candidates)].filter((candidate) => fs4.existsSync(path5.join(cwd, candidate)));
+}
+
+// src/commands/init.ts
+function registerInitCommand(program, context) {
+  program.command("init").description("Initialize AgentKick memory, agent instructions, and repo workflow files.").option("--dry-run", "show file operations without writing").action((options) => {
+    applyWriteMode(program, options);
+    const profile = detectProject(context.cwd);
+    writeAgentFiles(context.cwd, profile);
+    writePack(context.cwd, "core", profile);
+    logger.success(`Initialized AI-agent setup for ${profile.name}.`);
+    if (options.dryRun) logger.muted("Dry run only. No files were written.");
+    printDetectionSummary(profile);
+  });
+}
+
+// src/commands/new.ts
+import fs5 from "fs";
+import path6 from "path";
+import { input, select } from "@inquirer/prompts";
+
+// src/templates/project-templates.ts
 function writeTemplateProject(projectDir, profile) {
   switch (profile.template) {
     case "chrome-extension":
@@ -1642,179 +1753,123 @@ function titleize2(value) {
   return value.split(/[-_\s]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-// src/cli.ts
-function createProgram(cwd = process2.cwd()) {
-  const program = new Command();
-  program.name("agentkick").description("Workflow infrastructure for AI-assisted software development.").version(VERSION, "-v, --version").option("--dry-run", "show file operations without writing");
-  program.command("init").description("Initialize AgentKick memory, agent instructions, and repo workflow files.").option("--dry-run", "show file operations without writing").action((options) => {
-    applyWriteMode(program, options);
-    initExistingProject(cwd, options);
-  });
-  program.command("doctor").description("Check AI workflow readiness and stack detection.").option("--strict", "exit non-zero when readiness is blocked or below threshold").option("--json", "print JSON output").option("--debug", "print stack detection reasoning").action((options) => {
-    runDoctor(cwd, options);
-  });
-  program.command("focus").description("Print the minimal project context an agent should load before editing.").argument("[scope]", "optional feature, folder, or task scope").action((scope) => {
-    printFocus(cwd, scope);
-  });
-  program.command("summarize").description("Summarize the current repo for handoff or thread reset.").argument("[scope]", "optional feature, folder, or task scope").action((scope) => {
-    printSummary(cwd, scope);
-  });
+// src/commands/new.ts
+function registerNewCommand(program, context) {
   program.command("new").description("Create a new agent-ready project from a supported template.").argument("[template]", `template: ${SUPPORTED_TEMPLATES.join(", ")}`).argument("[project-name]", "project folder name").action(async (template, projectName) => {
     applyWriteMode(program);
-    await createNewProject({ template, projectName, cwd, options: program.opts() });
+    const resolvedTemplate = await resolveTemplate(template);
+    const resolvedName = sanitizeProjectName(projectName ?? await input({ message: "Project name:" }));
+    if (!resolvedName) throw new Error("project name is required");
+    const projectDir = path6.resolve(context.cwd, resolvedName);
+    if (fs5.existsSync(projectDir)) throw new Error(`target folder already exists: ${projectDir}`);
+    const defaultPacks = defaultPacksForTemplate(resolvedTemplate);
+    const profile = {
+      ...buildProfile(resolvedTemplate, resolvedName),
+      packs: ["core", ...defaultPacks]
+    };
+    writeTemplateProject(projectDir, profile);
+    writeAgentFiles(projectDir, profile);
+    writePack(projectDir, "core", profile, { updateConfig: false });
+    for (const pack of defaultPacks) writePack(projectDir, pack, profile, { updateConfig: false });
+    logger.success(`Created ${resolvedName} using ${resolvedTemplate}.`);
+    console.log("Next steps:");
+    console.log(`  cd ${resolvedName}`);
+    console.log("  agentkick doctor");
   });
-  program.command("add").description("Add an AgentKick command/skill pack.").argument("<pack>", `pack: ${SUPPORTED_PACKS.join(", ")}`).action((pack) => {
-    applyWriteMode(program);
-    addPack(cwd, pack, program.opts());
+}
+async function resolveTemplate(template) {
+  if (template && isTemplate(template)) return template;
+  if (template) throw new Error(`unknown template "${template}". Supported: ${SUPPORTED_TEMPLATES.join(", ")}`);
+  return select({
+    message: "Project type:",
+    choices: SUPPORTED_TEMPLATES.map((item) => ({ name: item, value: item }))
   });
+}
+function isTemplate(value) {
+  return SUPPORTED_TEMPLATES.includes(value);
+}
+function sanitizeProjectName(name) {
+  return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// src/core/config.ts
+import path7 from "path";
+import { z } from "zod";
+var AgentKickConfigSchema = z.object({
+  schemaVersion: z.number().optional(),
+  name: z.string().optional(),
+  stack: z.array(z.string()).optional(),
+  packageManager: z.string().optional(),
+  testCommand: z.string().optional(),
+  buildCommand: z.string().optional(),
+  launchTarget: z.string().optional(),
+  packs: z.array(z.string()).optional(),
+  safety: z.object({
+    preserveBackups: z.boolean().optional(),
+    mcpFilesystemScope: z.string().optional(),
+    destructiveActionsRequireApproval: z.boolean().optional()
+  }).optional()
+}).passthrough();
+function loadConfig(cwd) {
+  const raw = readJsonSafe(path7.join(cwd, ".agentkick.json"));
+  if (!raw) return null;
+  const parsed = AgentKickConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+// src/utils/git.ts
+import { execa } from "execa";
+async function gitBranch(cwd) {
+  try {
+    const result = await execa("git", ["branch", "--show-current"], { cwd });
+    return result.stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+// src/commands/summarize.ts
+function registerSummarizeCommand(program, context) {
+  program.command("summarize").description("Summarize the current repo for handoff or thread reset.").argument("[scope]", "optional feature, folder, or task scope").action(async (scope) => {
+    const profile = detectProject(context.cwd);
+    const config = loadConfig(context.cwd);
+    const branch = await gitBranch(context.cwd);
+    console.log("AgentKick summary");
+    console.log("");
+    console.log(`Project: ${profile.name}`);
+    if (scope) console.log(`Scope: ${scope}`);
+    if (branch) console.log(`Git branch: ${branch}`);
+    console.log(`Stack: ${formatStack(profile)}`);
+    if (profile.capabilities?.length) console.log(`Capabilities: ${profile.capabilities.join(", ")}`);
+    console.log(`Package manager: ${profile.packageManager}`);
+    console.log(`Test: ${config?.testCommand ?? profile.testCommand}`);
+    console.log(`Build: ${config?.buildCommand ?? profile.buildCommand}`);
+    console.log("");
+    console.log("Recommended next step: run agentkick focus before giving a coding agent a new task.");
+  });
+}
+
+// src/commands/registry.ts
+function registerCommands(program, context) {
+  registerInitCommand(program, context);
+  registerDoctorCommand(program, context);
+  registerFocusCommand(program, context);
+  registerSummarizeCommand(program, context);
+  registerNewCommand(program, context);
+  registerAddCommand(program, context);
+}
+
+// src/core/program.ts
+function createProgram(cwd = process2.cwd()) {
+  const program = new Command();
+  const context = { cwd };
+  program.name("agentkick").description("Workflow infrastructure for AI-assisted software development.").version(VERSION, "-v, --version").option("--dry-run", "show file operations without writing");
+  registerCommands(program, context);
   return program;
 }
 async function run(argv, cwd = process2.cwd()) {
   const program = createProgram(cwd);
   await program.parseAsync(argv, { from: "user" });
-}
-async function createNewProject(input) {
-  let template = input.template;
-  let projectName = input.projectName;
-  if (!template || !projectName) {
-    if (!process2.stdin.isTTY || !process2.stdout.isTTY) {
-      throw new Error("usage: agentkick new <template> <project-name>");
-    }
-    ({ template, projectName } = await promptForNewProject({ template, projectName }));
-  }
-  if (!isTemplate(template)) {
-    throw new Error(`unknown template "${template}". Supported: ${SUPPORTED_TEMPLATES.join(", ")}`);
-  }
-  const projectDir = path5.resolve(input.cwd, projectName);
-  if (fs4.existsSync(projectDir)) throw new Error(`target folder already exists: ${projectDir}`);
-  const defaultPacks = defaultPacksForTemplate(template);
-  const profile = { ...buildProfile(template, projectName), packs: ["core", ...defaultPacks] };
-  writeTemplateProject(projectDir, profile);
-  writeAgentFiles(projectDir, profile);
-  writePack(projectDir, "core", profile, { updateConfig: false });
-  for (const pack of defaultPacks) writePack(projectDir, pack, profile, { updateConfig: false });
-  console.log(`Created ${projectName} using ${template}.`);
-  if (input.options.dryRun) console.log("Dry run only. No files were written.");
-  console.log("Next steps:");
-  console.log(`  cd ${projectName}`);
-  console.log("  agentkick doctor");
-}
-function initExistingProject(cwd, options) {
-  const profile = detectProject(cwd);
-  writeAgentFiles(cwd, profile);
-  writePack(cwd, "core", profile);
-  console.log(`Initialized AI-agent setup for ${profile.name}.`);
-  if (options.dryRun) console.log("Dry run only. No files were written.");
-  printDetectionSummary(profile);
-}
-function addPack(cwd, pack, options) {
-  if (!isPack2(pack)) throw new Error(`unknown pack "${pack}". Supported: ${SUPPORTED_PACKS.join(", ")}`);
-  const profile = detectProject(cwd);
-  writePack(cwd, pack, profile);
-  console.log(`Added ${pack} pack.`);
-  if (options.dryRun) console.log("Dry run only. No files were written.");
-}
-function printFocus(cwd, scope) {
-  var _a;
-  const profile = detectProject(cwd);
-  const stack = profile.primaryStack ?? profile.template;
-  const scopeLabel = scope ?? "current task";
-  const candidates = ["AGENTS.md", "CLAUDE.md", ".agentkick.json", "package.json", "README.md", scope].filter(
-    (item) => Boolean(item)
-  );
-  console.log("AgentKick focus");
-  console.log("");
-  console.log(`Scope: ${scopeLabel}`);
-  console.log(`Detected stack: ${stack}`);
-  if ((_a = profile.capabilities) == null ? void 0 : _a.length) console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
-  console.log("");
-  console.log("Load first:");
-  for (const item of uniqueExisting(cwd, candidates)) console.log(`- ${item}`);
-  console.log("");
-  console.log("Working rule: keep the agent context limited to the scope, touched files, and repo memory above.");
-}
-function printSummary(cwd, scope) {
-  var _a;
-  const profile = detectProject(cwd);
-  console.log("AgentKick summary");
-  console.log("");
-  console.log(`Project: ${profile.name}`);
-  if (scope) console.log(`Scope: ${scope}`);
-  console.log(`Stack: ${profile.primaryStack ?? profile.template}`);
-  if ((_a = profile.capabilities) == null ? void 0 : _a.length) console.log(`Capabilities: ${profile.capabilities.join(", ")}`);
-  console.log(`Package manager: ${profile.packageManager}`);
-  console.log(`Test: ${profile.testCommand}`);
-  console.log(`Build: ${profile.buildCommand}`);
-  console.log("");
-  console.log("Recommended next step: run agentkick focus before giving a coding agent a new task.");
-}
-async function promptForNewProject(defaults) {
-  const rl = readline.createInterface({ input: process2.stdin, output: process2.stdout });
-  try {
-    console.log("AgentKick project setup\n");
-    SUPPORTED_TEMPLATES.forEach((item, index) => console.log(`  ${index + 1}. ${item}`));
-    console.log("");
-    const templateAnswer = defaults.template ?? await askQuestion(rl, "Project type [1]: ");
-    const template = resolveTemplateAnswer(templateAnswer || "1");
-    const nameAnswer = defaults.projectName ?? await askQuestion(rl, "Project name: ");
-    const projectName = sanitizeProjectName(nameAnswer);
-    if (!projectName) throw new Error("project name is required");
-    return { template, projectName };
-  } finally {
-    rl.close();
-  }
-}
-function askQuestion(rl, prompt) {
-  return new Promise((resolve) => {
-    rl.question(prompt, resolve);
-  });
-}
-function resolveTemplateAnswer(answer) {
-  const normalized = String(answer).trim();
-  const numeric = Number(normalized);
-  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= SUPPORTED_TEMPLATES.length) {
-    return SUPPORTED_TEMPLATES[numeric - 1];
-  }
-  if (isTemplate(normalized)) return normalized;
-  throw new Error(`unknown template "${answer}". Supported: ${SUPPORTED_TEMPLATES.join(", ")}`);
-}
-function sanitizeProjectName(name) {
-  return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-}
-function printDetectionSummary(profile) {
-  var _a;
-  console.log(`Detected stack: ${profile.primaryStack ?? profile.template ?? "generic"}`);
-  if ((_a = profile.capabilities) == null ? void 0 : _a.length) {
-    console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
-  }
-  if ((profile.primaryStack ?? profile.template) === "generic") {
-    console.log("Could not confidently detect stack. Run agentkick doctor --debug to see checked files.");
-    printWorkspaceHints2(profile);
-  }
-}
-function applyWriteMode(program, options = {}) {
-  const globalOptions = program.opts();
-  setWriteMode({ dryRun: Boolean(options.dryRun ?? globalOptions.dryRun) });
-}
-function uniqueExisting(cwd, candidates) {
-  return [...new Set(candidates)].filter((candidate) => fs4.existsSync(path5.join(cwd, candidate)));
-}
-function isTemplate(value) {
-  return SUPPORTED_TEMPLATES.includes(value);
-}
-function isPack2(value) {
-  return SUPPORTED_PACKS.includes(value);
-}
-function printWorkspaceHints2(profile) {
-  var _a;
-  const hints = ((_a = profile.detection) == null ? void 0 : _a.workspaceHints) ?? [];
-  if (hints.length === 0) return;
-  console.log("");
-  console.log("This looks like a workspace folder, not a single app repo.");
-  console.log("Run AgentKick inside one project folder, for example:");
-  for (const hint of hints.slice(0, 5)) {
-    console.log(`  cd ${hint.path}  # ${hint.stack}`);
-  }
 }
 
 // src/index.ts

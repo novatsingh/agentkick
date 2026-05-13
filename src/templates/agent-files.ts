@@ -1,5 +1,5 @@
-import { json, writeFile } from "./fs-utils.js";
-import type { ProjectProfile } from "./types.js";
+import { json, writeFile } from "../utils/fs.js";
+import type { ProjectProfile } from "../core/types.js";
 
 export function writeAgentFiles(cwd: string, profile: ProjectProfile) {
   writeFile(cwd, "AGENTS.md", agentsMd(profile));

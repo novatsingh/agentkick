@@ -1,6 +1,6 @@
-import { json, writeFile } from "./fs-utils.js";
+import { json, writeFile } from "../utils/fs.js";
 import { readmeFor } from "./agent-files.js";
-import type { ProjectProfile } from "./types.js";
+import type { ProjectProfile } from "../core/types.js";
 
 export function writeTemplateProject(projectDir: string, profile: ProjectProfile) {
   switch (profile.template) {

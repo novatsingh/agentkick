@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readJsonSafe } from "./fs-utils.js";
-import { detectProject } from "./profile.js";
-import type { DetectionDebug, DoctorOptions, PackageJson } from "./types.js";
+import { readJsonSafe } from "../utils/fs.js";
+import { detectProject } from "../detectors/project-detector.js";
+import type { DetectionDebug, DoctorOptions, PackageJson } from "../core/types.js";
 
 type DoctorCheck = { ok: boolean; label: string; message: string };
 

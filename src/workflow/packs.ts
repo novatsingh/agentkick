@@ -1,7 +1,7 @@
 import path from "node:path";
-import { json, readJsonSafe, writeAbsoluteFile, writeFile } from "./fs-utils.js";
-import { launchChecklist } from "./agent-files.js";
-import type { Pack, ProjectProfile, WritePackOptions } from "./types.js";
+import { launchChecklist } from "../templates/agent-files.js";
+import { json, readJsonSafe, writeAbsoluteFile, writeFile } from "../utils/fs.js";
+import type { Pack, ProjectProfile, WritePackOptions } from "../core/types.js";
 
 type PackEntry =
   | { kind: "command"; name: string; body: string }
