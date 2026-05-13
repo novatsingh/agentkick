@@ -9,14 +9,14 @@ It is not another coding agent. It is a local-first repo layer for agent instruc
 ![AgentKick terminal demo](docs/assets/readme/agentkick-demo.gif)
 
 ```bash
-npm install -g github:novatsingh/agentkick
+npm install -g https://github.com/novatsingh/agentkick/archive/refs/heads/main.tar.gz
 agentkick init
 agentkick doctor
 agentkick focus
 agentkick summarize
 ```
 
-> npm package publishing is not live yet. Until the first npm release, install from GitHub instead of `npx agentkick`.
+> npm package publishing is not live yet. Until the first npm release, install from the GitHub tarball instead of `npx agentkick`.
 
 ## Why AgentKick Exists
 
