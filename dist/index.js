@@ -47,10 +47,10 @@ function writeAbsoluteFile(file2, content) {
   }
   ensureDir(path.dirname(file2));
   if (fs.existsSync(file2)) {
-    const existing = fs.readFileSync(file2, "utf8");
-    if (existing === content) return;
+    const existing2 = fs.readFileSync(file2, "utf8");
+    if (existing2 === content) return;
     const backup = `${file2}.agentkick-backup`;
-    if (!fs.existsSync(backup)) fs.writeFileSync(backup, existing, "utf8");
+    if (!fs.existsSync(backup)) fs.writeFileSync(backup, existing2, "utf8");
   }
   fs.writeFileSync(file2, content, "utf8");
 }
@@ -454,39 +454,68 @@ var logger = {
 };
 
 // src/workflow/packs.ts
+import path4 from "path";
+
+// src/workflow/memory.ts
+import fs3 from "fs";
 import path3 from "path";
 
-// src/templates/agent-files.ts
-function writeAgentFiles(cwd, profile, options = {}) {
-  if (options.includeWorkflowMemory ?? true) writeWorkflowMemoryFiles(cwd, profile);
-  writeFile(cwd, "AGENTS.md", agentsMd(profile));
-  writeFile(cwd, "CLAUDE.md", claudeMd(profile));
-  writeFile(cwd, ".github/copilot-instructions.md", copilotInstructions(profile));
-  writeGithubInstructions(cwd, profile);
-  writeClaudeSkills(cwd, profile);
-  writeGenericSkills(cwd, profile);
-  writeCodexAgents(cwd, profile);
-  writeFile(cwd, ".cursor/rules/agentkick.mdc", cursorRules(profile));
-  writeFile(
-    cwd,
-    ".agentkick.json",
-    json({
-      schemaVersion: 1,
-      name: profile.name,
-      stack: profile.stack,
-      packageManager: profile.packageManager,
-      testCommand: profile.testCommand,
-      buildCommand: profile.buildCommand,
-      launchTarget: profile.launchTarget,
-      packs: profile.packs ?? ["core"],
-      safety: {
-        preserveBackups: true,
-        mcpFilesystemScope: "repo",
-        destructiveActionsRequireApproval: true
-      }
-    })
-  );
+// src/utils/git.ts
+import { execa } from "execa";
+async function gitBranch(cwd) {
+  try {
+    const result = await execa("git", ["branch", "--show-current"], { cwd });
+    return result.stdout.trim() || null;
+  } catch {
+    return null;
+  }
 }
+
+// src/workflow/memory.ts
+var MEMORY_FILES = [
+  "AGENTS.md",
+  "CURRENT_TASK.md",
+  "ARCHITECTURE.md",
+  "FEATURE_SUMMARIES.md",
+  "WORKFLOW_RULES.md",
+  "DECISIONS.md",
+  "TASK_HISTORY.md"
+];
+var ALWAYS_LOAD = ["AGENTS.md", "CURRENT_TASK.md", "ARCHITECTURE.md", "FEATURE_SUMMARIES.md", "WORKFLOW_RULES.md"];
+var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".css",
+  ".scss",
+  ".html",
+  ".json",
+  ".md",
+  ".py",
+  ".go",
+  ".rs",
+  ".php"
+]);
+var IGNORED_DIRS = /* @__PURE__ */ new Set([
+  ".git",
+  ".next",
+  ".turbo",
+  ".vercel",
+  ".netlify",
+  ".cache",
+  ".agentkick",
+  "coverage",
+  "dist",
+  "build",
+  "out",
+  "node_modules",
+  "vendor",
+  "target",
+  "__pycache__"
+]);
 function writeWorkflowMemoryFiles(cwd, profile) {
   writeFile(
     cwd,
@@ -502,6 +531,10 @@ No active task.
 - Project: ${profile.name}
 - Stack: ${profile.stack.join(", ") || "generic"}
 - Verification: ${profile.testCommand}
+
+## Scoped Files
+
+- None yet.
 
 ## Update Rule
 
@@ -585,6 +618,292 @@ Record completed, verified work here.
 
 - No completed tasks yet.
 `
+  );
+}
+function writeInitialWorkflowState(cwd, profile) {
+  const state = {
+    schemaVersion: 1,
+    project: profile.name,
+    activeScope: "none",
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    stack: profile.stack,
+    scopedFiles: []
+  };
+  writeFile(cwd, ".agentkick/workflow-state.json", json(state));
+}
+function buildFocusContext(cwd, scope = "current task") {
+  const profile = detectProject(cwd);
+  const scopedFiles = findScopedFiles(cwd, scope);
+  updateCurrentTask(cwd, profile, scope, scopedFiles);
+  writeWorkflowState(cwd, profile, scope, scopedFiles);
+  return {
+    profile,
+    scope,
+    loadFirst: existing(cwd, ALWAYS_LOAD),
+    scopedFiles,
+    memory: memoryDigest(cwd),
+    boundaries: boundariesFor(scope, scopedFiles)
+  };
+}
+async function buildWorkflowSummary(cwd, scope) {
+  const profile = detectProject(cwd);
+  const branch = await gitBranch(cwd);
+  const selectedScope = scope ?? readActiveScope(cwd) ?? "current task";
+  const scopedFiles = findScopedFiles(cwd, selectedScope).slice(0, 12);
+  const memory = memoryDigest(cwd);
+  return {
+    project: profile.name,
+    stack: profile.primaryStack ?? profile.template,
+    capabilities: profile.capabilities ?? [],
+    packageManager: profile.packageManager,
+    testCommand: profile.testCommand,
+    buildCommand: profile.buildCommand,
+    branch,
+    scope: selectedScope,
+    scopedFiles,
+    memory,
+    freshChatSummary: freshChatSummary(profile, selectedScope, scopedFiles, memory)
+  };
+}
+function renderFocus(context) {
+  const lines = [
+    "AgentKick focus",
+    "",
+    `Scope: ${context.scope}`,
+    `Detected stack: ${context.profile.primaryStack ?? context.profile.template}`,
+    context.profile.capabilities?.length ? `Detected capabilities: ${context.profile.capabilities.join(", ")}` : "",
+    "",
+    "Load first:",
+    ...context.loadFirst.map((file2) => `- ${file2}`),
+    "",
+    "Scoped files:",
+    ...context.scopedFiles.length > 0 ? context.scopedFiles.map((file2) => `- ${file2.path} (${file2.reason})`) : ["- No scoped source files found. Start from the memory files above."],
+    "",
+    "Execution boundaries:",
+    ...context.boundaries.map((boundary) => `- ${boundary}`),
+    "",
+    "Compressed memory:",
+    ...context.memory.map((item) => `- ${item}`),
+    "",
+    "Working rule: load only the files above unless the code path proves another file is required."
+  ];
+  return lines.filter((line) => line !== "").join("\n");
+}
+function renderSummary(summary) {
+  const lines = [
+    "AgentKick summary",
+    "",
+    `Project: ${summary.project}`,
+    summary.branch ? `Git branch: ${summary.branch}` : "",
+    `Scope: ${summary.scope}`,
+    `Stack: ${summary.stack}`,
+    summary.capabilities.length ? `Capabilities: ${summary.capabilities.join(", ")}` : "",
+    `Package manager: ${summary.packageManager}`,
+    `Test: ${summary.testCommand}`,
+    `Build: ${summary.buildCommand}`,
+    "",
+    "Scoped files:",
+    ...summary.scopedFiles.length > 0 ? summary.scopedFiles.map((file2) => `- ${file2.path} (${file2.lines} lines)`) : ["- None detected from current scope."],
+    "",
+    "Memory digest:",
+    ...summary.memory.map((item) => `- ${item}`),
+    "",
+    "Fresh-chat summary:",
+    summary.freshChatSummary
+  ];
+  return lines.filter((line) => line !== "").join("\n");
+}
+function updateCurrentTask(cwd, profile, scope, files) {
+  writeFile(
+    cwd,
+    "CURRENT_TASK.md",
+    `# Current Task
+
+## Status
+
+Prepared focus context.
+
+## Active Scope
+
+- Task scope: ${scope}
+- Project: ${profile.name}
+- Stack: ${profile.stack.join(", ") || "generic"}
+- Verification: ${profile.testCommand}
+
+## Scoped Files
+
+${files.length > 0 ? files.map((file2) => `- ${file2.path}: ${file2.reason}`).join("\n") : "- No scoped files detected yet."}
+
+## Execution Boundary
+
+- Stay inside the scoped files unless a direct dependency requires expansion.
+- Update this file if the task scope changes.
+- Move durable decisions to \`DECISIONS.md\`.
+- Move completed work to \`TASK_HISTORY.md\`.
+`
+  );
+}
+function writeWorkflowState(cwd, profile, scope, files) {
+  const state = {
+    schemaVersion: 1,
+    project: profile.name,
+    activeScope: scope,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    stack: profile.stack,
+    scopedFiles: files.map((file2) => file2.path)
+  };
+  writeFile(cwd, ".agentkick/workflow-state.json", json(state));
+}
+function findScopedFiles(cwd, scope) {
+  const terms = tokenize(scope);
+  const allFiles = scanFiles(cwd);
+  const scored = allFiles.map((file2) => scoreFile(cwd, file2, terms)).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path)).slice(0, 16);
+  if (scored.length === 0 && scope !== "current task") {
+    return allFiles.filter((file2) => file2.path.includes(scope)).slice(0, 12).map((file2) => ({ ...file2, reason: "path contains scope" }));
+  }
+  return scored.map(({ file: file2, reasons }) => ({ ...file2, reason: reasons.slice(0, 2).join(", ") }));
+}
+function scanFiles(cwd) {
+  const results = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs3.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path3.join(dir, entry.name);
+      const relativePath = slash(path3.relative(cwd, fullPath));
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const extension = path3.extname(entry.name).toLowerCase();
+      if (isAgentMemoryPath(relativePath)) continue;
+      if (!SOURCE_EXTENSIONS.has(extension)) continue;
+      const stats = fs3.statSync(fullPath);
+      if (stats.size > 4e5) continue;
+      results.push({ path: relativePath, lines: lineCount(readFileSafe(fullPath)) });
+    }
+  };
+  walk(cwd);
+  return results;
+}
+function scoreFile(cwd, file2, terms) {
+  const lowerPath = file2.path.toLowerCase();
+  const reasons = [];
+  let score = 0;
+  for (const term of terms) {
+    if (lowerPath.includes(term)) {
+      score += lowerPath.split("/").some((part) => part.includes(term)) ? 8 : 4;
+      reasons.push(`path matches "${term}"`);
+    }
+  }
+  if (score === 0 && terms.length > 0 && file2.lines < 900) {
+    const content = readFileSafe(path3.join(cwd, file2.path)).toLowerCase();
+    for (const term of terms) {
+      if (content.includes(term)) {
+        score += 2;
+        reasons.push(`content mentions "${term}"`);
+        break;
+      }
+    }
+  }
+  if (score > 0 && (lowerPath.includes("readme") || lowerPath.endsWith("route.ts") || lowerPath.endsWith("api.ts"))) {
+    score += 1;
+  }
+  return { file: file2, score, reasons: reasons.length > 0 ? reasons : ["near scope"] };
+}
+function memoryDigest(cwd) {
+  return MEMORY_FILES.filter((file2) => fs3.existsSync(path3.join(cwd, file2))).map((file2) => {
+    const content = readFileSafe(path3.join(cwd, file2));
+    return `${file2}: ${compressText(content, 180)}`;
+  });
+}
+function boundariesFor(scope, files) {
+  const roots = [...new Set(files.map((file2) => file2.path.split("/").slice(0, 3).join("/")))].slice(0, 5);
+  return [
+    `Primary task scope is "${scope}".`,
+    roots.length > 0 ? `Prefer these boundaries: ${roots.join(", ")}.` : "No source boundary was detected yet.",
+    "Do not edit generated, build, dependency, or unrelated files.",
+    "Run the documented test/build command after changes when possible."
+  ];
+}
+function freshChatSummary(profile, scope, files, memory) {
+  return [
+    `${profile.name} is a ${profile.stack.join(", ") || "generic"} project prepared with AgentKick.`,
+    `Current scope: ${scope}.`,
+    files.length > 0 ? `Relevant files: ${files.map((file2) => file2.path).join(", ")}.` : "Relevant files are not identified yet.",
+    `Verification: ${profile.testCommand}; build: ${profile.buildCommand}.`,
+    `Memory: ${memory.map((item) => item.replace(/\s+/g, " ")).slice(0, 4).join(" ")}`
+  ].join("\n");
+}
+function readActiveScope(cwd) {
+  const state = readJsonSafe(path3.join(cwd, ".agentkick", "workflow-state.json"));
+  if (state?.activeScope && state.activeScope !== "none") return state.activeScope;
+  const currentTask = readFileSafe(path3.join(cwd, "CURRENT_TASK.md"));
+  const match = currentTask.match(/Task scope:\s*(.+)/i);
+  return match?.[1]?.trim() || null;
+}
+function existing(cwd, files) {
+  return files.filter((file2) => fs3.existsSync(path3.join(cwd, file2)));
+}
+function tokenize(value) {
+  return value.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length >= 2 && !["the", "and", "for", "with", "task", "current"].includes(part));
+}
+function readFileSafe(file2) {
+  try {
+    return fs3.readFileSync(file2, "utf8");
+  } catch {
+    return "";
+  }
+}
+function lineCount(content) {
+  if (!content) return 0;
+  return content.split(/\r?\n/).length;
+}
+function compressText(content, maxLength) {
+  const compact = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" ").replace(/\s+/g, " ");
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 3)}...`;
+}
+function isAgentMemoryPath(relativePath) {
+  return MEMORY_FILES.includes(relativePath) || relativePath === ".agentkick.json" || relativePath.startsWith(".github/") || relativePath.startsWith(".claude/") || relativePath.startsWith(".codex/") || relativePath.startsWith(".agents/") || relativePath.startsWith(".cursor/");
+}
+function slash(value) {
+  return value.replace(/\\/g, "/");
+}
+
+// src/templates/agent-files.ts
+function writeAgentFiles(cwd, profile, options = {}) {
+  if (options.includeWorkflowMemory ?? true) writeWorkflowMemoryFiles(cwd, profile);
+  writeFile(cwd, "AGENTS.md", agentsMd(profile));
+  writeFile(cwd, "CLAUDE.md", claudeMd(profile));
+  writeFile(cwd, ".github/copilot-instructions.md", copilotInstructions(profile));
+  writeGithubInstructions(cwd, profile);
+  writeClaudeSkills(cwd, profile);
+  writeGenericSkills(cwd, profile);
+  writeCodexAgents(cwd, profile);
+  writeFile(cwd, ".cursor/rules/agentkick.mdc", cursorRules(profile));
+  writeFile(
+    cwd,
+    ".agentkick.json",
+    json({
+      schemaVersion: 1,
+      name: profile.name,
+      stack: profile.stack,
+      packageManager: profile.packageManager,
+      testCommand: profile.testCommand,
+      buildCommand: profile.buildCommand,
+      launchTarget: profile.launchTarget,
+      packs: profile.packs ?? ["core"],
+      safety: {
+        preserveBackups: true,
+        mcpFilesystemScope: "repo",
+        destructiveActionsRequireApproval: true
+      }
+    })
   );
 }
 function readmeFor(profile) {
@@ -1115,7 +1434,7 @@ ${body}
 `);
 }
 function updateAgentkickConfig(cwd, patch) {
-  const filePath = path3.join(cwd, ".agentkick.json");
+  const filePath = path4.join(cwd, ".agentkick.json");
   const current = readJsonSafe(filePath) ?? {};
   const packs = /* @__PURE__ */ new Set([...current.packs ?? [], ...patch.addedPacks ?? []]);
   current.packs = [...packs].sort();
@@ -1146,8 +1465,8 @@ function isPack2(value) {
 }
 
 // src/doctor/doctor-engine.ts
-import fs3 from "fs";
-import path4 from "path";
+import fs4 from "fs";
+import path5 from "path";
 var REQUIRED_AGENT_FILES = [
   ["AGENTS.md", "master repo intelligence"],
   ["CLAUDE.md", "Claude memory"],
@@ -1169,7 +1488,7 @@ var WORKFLOW_MEMORY_FILES = [
   "DECISIONS.md",
   "TASK_HISTORY.md"
 ];
-var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([
+var SOURCE_EXTENSIONS2 = /* @__PURE__ */ new Set([
   ".js",
   ".jsx",
   ".ts",
@@ -1184,7 +1503,7 @@ var SOURCE_EXTENSIONS = /* @__PURE__ */ new Set([
   ".rs",
   ".php"
 ]);
-var IGNORED_DIRS = /* @__PURE__ */ new Set([
+var IGNORED_DIRS2 = /* @__PURE__ */ new Set([
   ".git",
   ".next",
   ".turbo",
@@ -1212,8 +1531,8 @@ function runDoctor(cwd, options = {}) {
   }
 }
 function auditRepo(cwd) {
-  const packageInfo = readJsonSafe(path4.join(cwd, "package.json"));
-  const config = readJsonSafe(path4.join(cwd, ".agentkick.json"));
+  const packageInfo = readJsonSafe(path5.join(cwd, "package.json"));
+  const config = readJsonSafe(path5.join(cwd, ".agentkick.json"));
   const profile = detectProject(cwd);
   const checks = REQUIRED_AGENT_FILES.map(([file2, label]) => requiredFile(cwd, file2, label));
   const analysis = analyzeWorkflow(cwd, packageInfo, config);
@@ -1248,7 +1567,7 @@ function auditRepo(cwd) {
 }
 function analyzeWorkflow(cwd, packageInfo, config) {
   const files = scanRepoFiles(cwd);
-  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS.has(file2.extension));
+  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
   const reactFiles = sourceFiles.filter((file2) => file2.isReact);
   const problems = [
     ...memoryProblems(cwd),
@@ -1274,29 +1593,29 @@ function scanRepoFiles(cwd) {
   const walk = (dir) => {
     let entries;
     try {
-      entries = fs3.readdirSync(dir, { withFileTypes: true });
+      entries = fs4.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const fullPath = path4.join(dir, entry.name);
-      const relativePath = slash(path4.relative(cwd, fullPath));
+      const fullPath = path5.join(dir, entry.name);
+      const relativePath = slash2(path5.relative(cwd, fullPath));
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name)) walk(fullPath);
+        if (!IGNORED_DIRS2.has(entry.name)) walk(fullPath);
         continue;
       }
       if (!entry.isFile()) continue;
-      const extension = path4.extname(entry.name).toLowerCase();
-      if (!SOURCE_EXTENSIONS.has(extension) && !isMemoryFile(relativePath)) continue;
-      const stats = fs3.statSync(fullPath);
+      const extension = path5.extname(entry.name).toLowerCase();
+      if (!SOURCE_EXTENSIONS2.has(extension) && !isMemoryFile(relativePath)) continue;
+      const stats = fs4.statSync(fullPath);
       if (stats.size > 6e5) continue;
-      const content = readFileSafe(fullPath);
+      const content = readFileSafe2(fullPath);
       results.push({
         relativePath,
         absolutePath: fullPath,
         extension,
         bytes: stats.size,
-        lines: lineCount(content),
+        lines: lineCount2(content),
         isReact: extension === ".tsx" || extension === ".jsx"
       });
     }
@@ -1307,8 +1626,8 @@ function scanRepoFiles(cwd) {
 function memoryProblems(cwd) {
   const problems = [];
   for (const file2 of WORKFLOW_MEMORY_FILES) {
-    const fullPath = path4.join(cwd, file2);
-    if (!fs3.existsSync(fullPath)) {
+    const fullPath = path5.join(cwd, file2);
+    if (!fs4.existsSync(fullPath)) {
       problems.push({
         severity: file2 === "AGENTS.md" ? "high" : "medium",
         category: "memory",
@@ -1319,7 +1638,7 @@ function memoryProblems(cwd) {
       });
       continue;
     }
-    const content = readFileSafe(fullPath);
+    const content = readFileSafe2(fullPath);
     if (content.trim().length < 80) {
       problems.push({
         severity: "medium",
@@ -1374,7 +1693,7 @@ function fileSizeProblems(files) {
 function reactComponentProblems(files) {
   const problems = [];
   for (const file2 of files) {
-    const content = readFileSafe(file2.absolutePath);
+    const content = readFileSafe2(file2.absolutePath);
     const hookCount = (content.match(/\buse[A-Z]\w*\(/g) ?? []).length;
     const jsxBlocks = (content.match(/return\s*\(/g) ?? []).length;
     if (file2.lines >= 320 || hookCount >= 9 || jsxBlocks >= 6) {
@@ -1456,11 +1775,11 @@ function tokenWasteProblems(cwd, files) {
 }
 function taskIsolationProblems(cwd) {
   const problems = [];
-  const hasCurrentTask = fs3.existsSync(path4.join(cwd, "CURRENT_TASK.md"));
-  const hasArchitecture = fs3.existsSync(path4.join(cwd, "ARCHITECTURE.md"));
-  const hasProjectMap = fs3.existsSync(path4.join(cwd, "docs", "PROJECT_MAP.md"));
+  const hasCurrentTask = fs4.existsSync(path5.join(cwd, "CURRENT_TASK.md"));
+  const hasArchitecture = fs4.existsSync(path5.join(cwd, "ARCHITECTURE.md"));
+  const hasProjectMap = fs4.existsSync(path5.join(cwd, "docs", "PROJECT_MAP.md"));
   if (hasCurrentTask) {
-    const currentTask = readFileSafe(path4.join(cwd, "CURRENT_TASK.md"));
+    const currentTask = readFileSafe2(path5.join(cwd, "CURRENT_TASK.md"));
     if (!/active scope|current task|status/i.test(currentTask)) {
       problems.push({
         severity: "low",
@@ -1495,9 +1814,9 @@ function taskIsolationProblems(cwd) {
 function mcpProblems(cwd) {
   const problems = [];
   for (const fileName of [".mcp.json", "mcp.json"]) {
-    const fullPath = path4.join(cwd, fileName);
-    if (!fs3.existsSync(fullPath)) continue;
-    const content = readFileSafe(fullPath);
+    const fullPath = path5.join(cwd, fileName);
+    if (!fs4.existsSync(fullPath)) continue;
+    const content = readFileSafe2(fullPath);
     if (content.includes("C:\\\\") || content.includes("/") && content.includes("filesystem")) {
       problems.push({
         severity: "medium",
@@ -1522,8 +1841,8 @@ function mcpProblems(cwd) {
   return problems;
 }
 function ciProblems(cwd) {
-  const workflowDir = path4.join(cwd, ".github", "workflows");
-  if (fs3.existsSync(workflowDir)) return [];
+  const workflowDir = path5.join(cwd, ".github", "workflows");
+  if (fs4.existsSync(workflowDir)) return [];
   return [
     {
       severity: "low",
@@ -1578,9 +1897,9 @@ function printAudit(audit, options) {
   }
 }
 function requiredFile(cwd, relativePath, label) {
-  const fullPath = path4.join(cwd, relativePath);
-  if (!fs3.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
-  const content = fs3.readFileSync(fullPath, "utf8");
+  const fullPath = path5.join(cwd, relativePath);
+  if (!fs4.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
+  const content = fs4.readFileSync(fullPath, "utf8");
   if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
   return { ok: true, label, message: relativePath };
 }
@@ -1598,20 +1917,20 @@ function suggestionsFor(failures, problems) {
 function problemMessage(problem) {
   return `${problem.title}${problem.file ? ` (${problem.file})` : ""}: ${problem.detail}`;
 }
-function readFileSafe(file2) {
+function readFileSafe2(file2) {
   try {
-    return fs3.readFileSync(file2, "utf8");
+    return fs4.readFileSync(file2, "utf8");
   } catch {
     return "";
   }
 }
-function lineCount(content) {
+function lineCount2(content) {
   if (!content) return 0;
   return content.split(/\r?\n/).length;
 }
 function directoryExists2(cwd, relativePath) {
   try {
-    return fs3.statSync(path4.join(cwd, relativePath)).isDirectory();
+    return fs4.statSync(path5.join(cwd, relativePath)).isDirectory();
   } catch {
     return false;
   }
@@ -1619,7 +1938,7 @@ function directoryExists2(cwd, relativePath) {
 function isMemoryFile(relativePath) {
   return relativePath.endsWith(".md") || relativePath === ".agentkick.json";
 }
-function slash(value) {
+function slash2(value) {
   return value.replace(/\\/g, "/");
 }
 function printDetectionDebug(detection) {
@@ -1675,8 +1994,11 @@ function registerDoctorCommand(program, context) {
 }
 
 // src/commands/focus.ts
-import fs4 from "fs";
-import path5 from "path";
+function registerFocusCommand(program, context) {
+  program.command("focus").description("Print the minimal project context an agent should load before editing.").argument("[scope]", "optional feature, folder, or task scope").action((scope) => {
+    console.log(renderFocus(buildFocusContext(context.cwd, scope)));
+  });
+}
 
 // src/utils/format.ts
 import chalk2 from "chalk";
@@ -1703,35 +2025,13 @@ function printWorkspaceHints2(hints) {
   }
 }
 
-// src/commands/focus.ts
-function registerFocusCommand(program, context) {
-  program.command("focus").description("Print the minimal project context an agent should load before editing.").argument("[scope]", "optional feature, folder, or task scope").action((scope) => {
-    const profile = detectProject(context.cwd);
-    const candidates = ["AGENTS.md", "CLAUDE.md", ".agentkick.json", "package.json", "README.md", scope].filter(
-      (item) => Boolean(item)
-    );
-    console.log("AgentKick focus");
-    console.log("");
-    console.log(`Scope: ${scope ?? "current task"}`);
-    console.log(`Detected stack: ${formatStack(profile)}`);
-    if (profile.capabilities?.length) console.log(`Detected capabilities: ${profile.capabilities.join(", ")}`);
-    console.log("");
-    console.log("Load first:");
-    for (const item of uniqueExisting(context.cwd, candidates)) console.log(`- ${item}`);
-    console.log("");
-    console.log("Working rule: keep the agent context limited to the scope, touched files, and repo memory above.");
-  });
-}
-function uniqueExisting(cwd, candidates) {
-  return [...new Set(candidates)].filter((candidate) => fs4.existsSync(path5.join(cwd, candidate)));
-}
-
 // src/commands/init.ts
 function registerInitCommand(program, context) {
   program.command("init").description("Initialize AgentKick memory, agent instructions, and repo workflow files.").option("--dry-run", "show file operations without writing").action((options) => {
     applyWriteMode(program, options);
     const profile = detectProject(context.cwd);
     writeAgentFiles(context.cwd, profile);
+    writeInitialWorkflowState(context.cwd, profile);
     writePack(context.cwd, "core", profile);
     logger.success(`Initialized AI-agent setup for ${profile.name}.`);
     if (options.dryRun) logger.muted("Dry run only. No files were written.");
@@ -2668,60 +2968,10 @@ function normalizeTemplate(value) {
   return value?.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
-// src/core/config.ts
-import path7 from "path";
-import { z } from "zod";
-var AgentKickConfigSchema = z.object({
-  schemaVersion: z.number().optional(),
-  name: z.string().optional(),
-  stack: z.array(z.string()).optional(),
-  packageManager: z.string().optional(),
-  testCommand: z.string().optional(),
-  buildCommand: z.string().optional(),
-  launchTarget: z.string().optional(),
-  packs: z.array(z.string()).optional(),
-  safety: z.object({
-    preserveBackups: z.boolean().optional(),
-    mcpFilesystemScope: z.string().optional(),
-    destructiveActionsRequireApproval: z.boolean().optional()
-  }).optional()
-}).passthrough();
-function loadConfig(cwd) {
-  const raw = readJsonSafe(path7.join(cwd, ".agentkick.json"));
-  if (!raw) return null;
-  const parsed = AgentKickConfigSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
-}
-
-// src/utils/git.ts
-import { execa } from "execa";
-async function gitBranch(cwd) {
-  try {
-    const result = await execa("git", ["branch", "--show-current"], { cwd });
-    return result.stdout.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
 // src/commands/summarize.ts
 function registerSummarizeCommand(program, context) {
   program.command("summarize").description("Summarize the current repo for handoff or thread reset.").argument("[scope]", "optional feature, folder, or task scope").action(async (scope) => {
-    const profile = detectProject(context.cwd);
-    const config = loadConfig(context.cwd);
-    const branch = await gitBranch(context.cwd);
-    console.log("AgentKick summary");
-    console.log("");
-    console.log(`Project: ${profile.name}`);
-    if (scope) console.log(`Scope: ${scope}`);
-    if (branch) console.log(`Git branch: ${branch}`);
-    console.log(`Stack: ${formatStack(profile)}`);
-    if (profile.capabilities?.length) console.log(`Capabilities: ${profile.capabilities.join(", ")}`);
-    console.log(`Package manager: ${profile.packageManager}`);
-    console.log(`Test: ${config?.testCommand ?? profile.testCommand}`);
-    console.log(`Build: ${config?.buildCommand ?? profile.buildCommand}`);
-    console.log("");
-    console.log("Recommended next step: run agentkick focus before giving a coding agent a new task.");
+    console.log(renderSummary(await buildWorkflowSummary(context.cwd, scope)));
   });
 }
 

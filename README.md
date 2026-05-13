@@ -120,7 +120,23 @@ agentkick new ai-saas myapp
 agentkick new marketplace vendorhub
 ```
 
-The upcoming v1 workflow layer adds focused task context, summaries, and task splitting. See [Final MVP](docs/final-mvp/FINAL_MVP.md).
+### `agentkick focus`
+
+Creates scoped task context and updates `CURRENT_TASK.md` plus `.agentkick/workflow-state.json`.
+
+```bash
+agentkick focus auth
+agentkick focus workflows
+```
+
+### `agentkick summarize`
+
+Compresses current workflow state into a fresh-chat handoff summary.
+
+```bash
+agentkick summarize
+agentkick summarize auth
+```
 
 ## Before And After
 
@@ -251,11 +267,11 @@ The architecture specs live under [`docs/`](docs/README.md).
 
 ## Roadmap Snapshot
 
-The next v1 implementation pass is locked around:
+The next implementation pass is locked around:
 
-- `agentkick focus` for paste-ready task context
-- `agentkick summarize` for durable task handoffs
 - `agentkick split-task` for breaking broad AI requests into scoped chunks
+- stronger template modularization
+- package publishing readiness
 
 These are documented in [Final MVP](docs/final-mvp/FINAL_MVP.md) and [CLI Execution Plan](docs/final-mvp/CLI_EXECUTION_PLAN.md).
 

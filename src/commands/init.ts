@@ -3,6 +3,7 @@ import { writeAgentFiles } from "../templates/agent-files.js";
 import { printDetectionSummary } from "../utils/format.js";
 import { logger } from "../utils/logger.js";
 import { writePack } from "../workflow/packs.js";
+import { writeInitialWorkflowState } from "../workflow/memory.js";
 import { detectProject } from "../detectors/project-detector.js";
 import type { CommandContext } from "../core/program.js";
 import { applyWriteMode, type GlobalOptions } from "./shared.js";
@@ -16,6 +17,7 @@ export function registerInitCommand(program: Command, context: CommandContext) {
       applyWriteMode(program, options);
       const profile = detectProject(context.cwd);
       writeAgentFiles(context.cwd, profile);
+      writeInitialWorkflowState(context.cwd, profile);
       writePack(context.cwd, "core", profile);
       logger.success(`Initialized AI-agent setup for ${profile.name}.`);
       if (options.dryRun) logger.muted("Dry run only. No files were written.");
