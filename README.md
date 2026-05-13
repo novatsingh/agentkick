@@ -6,6 +6,8 @@ AgentKick turns repositories into AI-agent-native, production-safe, instruction-
 
 It is not another coding agent. It is the operating layer that makes coding agents behave like disciplined senior engineers.
 
+AgentKick is not semantic search, vector retrieval, embeddings infrastructure, or a code indexing competitor. It is the workflow, memory, and context operating layer for AI-assisted software development.
+
 ```bash
 npx agentkick new
 ```
@@ -36,6 +38,16 @@ AgentKick gives every project a strong starting structure:
 - `.github/copilot-instructions.md` for GitHub Copilot
 - `.github/instructions/*` for path-specific Copilot rules
 - `.agentkick.json` for project metadata
+
+## Documentation
+
+The architecture specs live under [`docs/`](docs/README.md) so the repo root stays focused on the product and CLI.
+
+- [Architecture](docs/architecture/SYSTEM_ARCHITECTURE.md)
+- [Persistent memory](docs/memory/MEMORY_SYSTEM.md)
+- [Doctor engine](docs/doctor/DOCTOR_ENGINE.md)
+- [Context engine](docs/context-engine/CONTEXT_ENGINE.md)
+- [Roadmap](docs/architecture/ROADMAP.md)
 
 ## Commands
 
@@ -106,15 +118,7 @@ See [docs/templates.md](docs/templates.md) and [docs/packs.md](docs/packs.md) fo
 
 `agentkick init` upgrades an existing repo so Codex, Claude, Cursor, and Copilot behave better.
 
-AgentKick is the repo intelligence layer between raw codebases and autonomous coding agents.
-
-## MVP Roadmap
-
-- More templates: Supabase SaaS, Astro, Django, Rails
-- MCP config generator with safety presets
-- Template marketplace
-- README/demo generator for GitHub launch
-- Star-growth checklist for open-source maintainers
+AgentKick is the repo intelligence layer between raw codebases and autonomous coding agents. See the full [roadmap](docs/architecture/ROADMAP.md) for the platform direction.
 
 ## Development
 
