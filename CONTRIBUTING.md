@@ -6,9 +6,11 @@ AgentKick is early. The best contributions are practical templates, command pack
 
 ```bash
 npm install
-npm test
-node bin/agentkick.js help
-node bin/agentkick.js new chrome-extension sample-extension
+npm run check
+npm run build
+npm run smoke
+node dist/index.js --help
+node dist/index.js new chrome-extension sample-extension --dry-run
 ```
 
 ## Contribution Ideas
@@ -20,16 +22,20 @@ node bin/agentkick.js new chrome-extension sample-extension
 
 ## Code Layout
 
-- Add new template names in `src/constants.js`.
-- Add stack profile behavior in `src/profile.js`.
-- Add generated project files in `src/templates.js`.
-- Add commands and specialist agents in `src/packs.js`.
-- Add readiness checks in `src/doctor.js`.
-- Keep `bin/agentkick.js` as a thin wrapper only.
+- CLI entrypoint: `src/index.ts`.
+- Command registration: `src/core/program.ts` and `src/commands/*`.
+- Stack and capability detection: `src/detectors/*`.
+- Generated project templates: `src/templates/*`.
+- Workflow memory, focus, summarize, and packs: `src/workflow/*`.
+- Doctor readiness checks: `src/doctor/*`.
+- Shared terminal, filesystem, git, and formatting helpers: `src/utils/*`.
+- Built CLI output: `dist/index.js`.
 
 ## Pull Request Checklist
 
 - Keep changes dependency-light unless the feature clearly needs a package.
-- Run `npm test`.
+- Run `npm run check`.
+- Run `npm run build`.
+- Run `npm run smoke`.
 - Include a smoke-test command in the PR description.
 - Do not include secrets or personal API keys in examples.

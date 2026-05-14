@@ -395,13 +395,14 @@ The architecture specs live under [`docs/`](docs/README.md).
 - [Doctor engine](docs/doctor/DOCTOR_ENGINE.md)
 - [Context engine](docs/context-engine/CONTEXT_ENGINE.md)
 - [Final MVP](docs/final-mvp/FINAL_MVP.md)
+- [Release checklist](docs/release.md)
 
 ## Roadmap Snapshot
 
 Near-term roadmap:
 
-- richer focus options for explicit file/task scopes
 - package publishing readiness
+- tighter tests around release packaging and generated templates
 
 These are documented in [Final MVP](docs/final-mvp/FINAL_MVP.md) and [CLI Execution Plan](docs/final-mvp/CLI_EXECUTION_PLAN.md).
 
@@ -411,6 +412,7 @@ These are documented in [Final MVP](docs/final-mvp/FINAL_MVP.md) and [CLI Execut
 npm install
 npm run check
 npm run build
+npm run smoke
 node dist/index.js doctor
 ```
 
@@ -426,7 +428,7 @@ Project structure:
 - `src/commands`: command registry and command handlers
 - `src/detectors`: stack and capability detection
 - `src/templates`: project templates and agent instruction renderers
-- `src/workflow`: workflow packs
+- `src/workflow`: workflow memory, focus, summarize, and packs
 - `src/doctor`: AI-readiness audit
 - `src/utils`: filesystem, logging, git, and formatting helpers
 

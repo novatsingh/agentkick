@@ -55,6 +55,10 @@
     "cursor",
     "mcp",
     "ai-agents",
+    "ai-workflow",
+    "local-first",
+    "repo-readiness",
+    "developer-experience",
     "developer-tools",
     "chrome-extension",
     "desktop-app",
@@ -64,8 +68,16 @@
     "marketplace",
     "workflow"
   ],
-  "author": "",
+  "author": "Novat Singh",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/novatsingh/agentkick.git"
+  },
+  "bugs": {
+    "url": "https://github.com/novatsingh/agentkick/issues"
+  },
+  "homepage": "https://github.com/novatsingh/agentkick#readme",
   "engines": {
     "node": ">=20"
   }

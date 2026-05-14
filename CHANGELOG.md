@@ -2,18 +2,15 @@
 
 ## 0.1.0
 
-- Added deeper repo intelligence generation: `.github/instructions/*`, `.claude/skills/*`, `.agents/skills/*`, and `.codex/agents/*`.
-- Upgraded `agentkick doctor` into a scored AI-readiness audit with `--strict` and `--json`.
-- Added backup preservation when AgentKick updates an existing different file.
-- Added `--dry-run` support for write commands.
-- Refactored the CLI from a single large executable into focused `src/` modules for commands, templates, packs, profile detection, generated agent files, and doctor checks.
-- Added a repo-wide JavaScript syntax checker under `scripts/check.js`.
-- Added templates for FastAPI, Flask, Laravel-oriented PHP, Go CLI, Rust CLI, and Electron.
-- Added command packs for Python, PHP/Laravel, Go, Rust, and Electron.
-- Improved project detection and `doctor` output for non-Node projects.
-- Added `agentkick new` for creating AI-agent-ready projects.
-- Added `agentkick init` for upgrading existing repos.
-- Added `agentkick add` for command and specialist-agent packs.
-- Added `agentkick doctor` for readiness checks.
-- Added templates for Chrome extension, Next.js, landing page, and Node CLI.
-- Added packs for core, Chrome extension, Next.js, Netlify, security, and GitHub.
+Initial public release candidate.
+
+- Added production TypeScript CLI built with Commander and tsup.
+- Added `agentkick init` for generating local-first repo memory and agent operating files.
+- Added `agentkick doctor` with stack detection, structured AI-readiness findings, `--strict`, `--json`, and `--debug`.
+- Added `agentkick focus` with `--task`, `--feature`, and `--files` for paste-ready coding-agent task briefs.
+- Added `agentkick summarize` with `--task`, `--handoff`, and compact task-history append behavior.
+- Added `agentkick split-task` for rule-based decomposition of broad coding requests.
+- Added `agentkick new` starter templates for Chrome extension, AI SaaS, SaaS, marketplace, internal tool, Electron app, and Tauri app.
+- Added `agentkick add` workflow packs for core, Chrome extension, Next.js, Netlify, security, GitHub, Python, PHP, Go, Rust, Electron, and Tauri.
+- Added generated agent guidance for AGENTS.md, Claude, Cursor, GitHub Copilot, Codex, and generic agent skill folders.
+- Added local-first safety behavior: dry-run support, backup preservation, no repo upload, no hosted agent dependency.

@@ -48,4 +48,5 @@ This repository must be understandable by autonomous coding agents before they m
 
 ## Stack Notes
 
-- Generic: document missing commands before assuming test, build, or deploy behavior.
+- Node CLI: verify changes with `npm test`, `npm run check`, `npm run build`, or `npm run smoke` depending on scope.
+- Build output lives in `dist/`; regenerate it with `npm run build` and do not edit it by hand.
