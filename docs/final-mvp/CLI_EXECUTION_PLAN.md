@@ -1,6 +1,6 @@
 # CLI Execution Plan
 
-This document defines exactly how each v1 command works.
+This document defines the implemented v1 launch command surface.
 
 ## Shared CLI Rules
 
@@ -31,7 +31,6 @@ Inputs:
 ```bash
 agentkick init
 agentkick init --dry-run
-agentkick init --minimal
 ```
 
 Behavior:
@@ -41,8 +40,8 @@ Behavior:
 - create or update `AGENTS.md`
 - create or update `WORKFLOW_RULES.md`
 - write `.agentkick.json`
-- write memory scaffold
-- write context manifest
+- write root-level workflow memory
+- write `.agentkick/workflow-state.json`
 - avoid app source changes
 
 Output:
@@ -52,12 +51,15 @@ AgentKick Init
 
 Created
   AGENTS.md
+  CLAUDE.md
+  CURRENT_TASK.md
+  ARCHITECTURE.md
+  FEATURE_SUMMARIES.md
   WORKFLOW_RULES.md
+  DECISIONS.md
+  TASK_HISTORY.md
   .agentkick.json
-  .agentkick/memory/project.md
-  .agentkick/memory/decisions.md
-  .agentkick/memory/tasks.md
-  .agentkick/context/manifest.json
+  .agentkick/workflow-state.json
 
 Source files changed
   none
@@ -85,6 +87,7 @@ Inputs:
 agentkick doctor
 agentkick doctor --strict
 agentkick doctor --json
+agentkick doctor --debug
 ```
 
 Behavior:
@@ -93,10 +96,7 @@ Behavior:
 - detect memory presence
 - detect agent operating files
 - detect test/build commands
-- detect context exclusions
 - detect giant files
-- detect raw logs in memory
-- detect stale task state
 - produce one readiness score
 - produce top findings with agent impact
 
@@ -117,7 +117,7 @@ Strong
   test command detected
 
 Next
-  agentkick focus --files <paths>
+  agentkick focus <scope>
 ```
 
 Strict mode:
@@ -141,19 +141,18 @@ Purpose:
 Inputs:
 
 ```bash
-agentkick focus --files src/popup.js popup.html
-agentkick focus --feature popup
-agentkick focus --task "Fix popup CTA"
+agentkick focus popup
+agentkick focus checkout
+agentkick focus "Fix popup CTA"
 ```
 
 Behavior:
 
 - read `AGENTS.md`
 - read `WORKFLOW_RULES.md`
-- read `.agentkick/context/manifest.json`
-- load minimal memory
+- load current root-level workflow memory
 - apply avoid paths
-- accept explicit files as source of truth
+- infer likely scoped files from the provided scope text
 - show uncertainty when scope is incomplete
 
 Output:
@@ -164,11 +163,11 @@ AgentKick Focus
 Read first
   AGENTS.md
   WORKFLOW_RULES.md
-  .agentkick/memory/project.md
+  CURRENT_TASK.md
 
 Task files
-  popup.html
-  popup.js
+  src/popup/index.html
+  src/popup/index.js
 
 Avoid
   dist/
@@ -186,6 +185,8 @@ Token optimization:
 - keeps output paste-ready
 - never copies full source files
 - never performs semantic retrieval
+- updates `CURRENT_TASK.md`
+- updates `.agentkick/workflow-state.json`
 
 ## `agentkick summarize`
 
@@ -196,49 +197,49 @@ Purpose:
 Inputs:
 
 ```bash
-agentkick summarize --task "Fix popup CTA"
-agentkick summarize --task "Fix checkout retry" --handoff
+agentkick summarize
+agentkick summarize popup
 ```
 
 Behavior:
 
-- collect task title
-- require status
-- require result or blocker
-- require verification state
-- require changed files when available
-- append compact entry to `.agentkick/memory/tasks.md`
+- read current workflow state
+- read active scope from `.agentkick/workflow-state.json` or `CURRENT_TASK.md`
+- detect likely scoped files from the selected scope
+- print a compact fresh-chat summary
 - avoid raw logs
 
 Output:
 
 ```text
-AgentKick Summarize
-
-Will append
-  .agentkick/memory/tasks.md
+AgentKick Summary
 
 Entry
-  Status: complete
-  Result: Popup CTA now opens trial flow.
-  Files: popup.html, popup.js
-  Verification: npm test; manual popup check
+  Project: browser-helper
+  Scope: popup
+  Files: src/popup/index.html, src/popup/index.js
+  Verification: npm test
 
 Next
-  git diff
+  paste summary into the next agent session
 ```
 
-Handoff mode:
+Fresh-chat handoff:
 
-- marks task as blocked or handoff-ready
-- includes next command
-- includes known failure state
+- includes project, stack, scope, files, commands, and compressed memory
+- does not mutate source files
+- does not store raw logs
 
-## `agentkick split-task`
+## `agentkick split-task` Roadmap
 
 Purpose:
 
 - turn a broad AI request into scoped execution chunks
+
+Status:
+
+- not implemented in the current v1 CLI registry
+- planned as a near-term command after launch-readiness docs and package publishing
 
 Inputs:
 
@@ -276,7 +277,7 @@ Suggested execution
      Verify: npm test
 
 Next
-  agentkick focus --files popup.html popup.js
+  agentkick focus popup
 ```
 
 Boundaries:
@@ -288,12 +289,20 @@ Boundaries:
 
 ## Command Naming Lock
 
-Use these names:
+Implemented v1 launch commands:
 
 - `init`
 - `doctor`
 - `focus`
 - `summarize`
+
+Secondary implemented commands:
+
+- `new`
+- `add`
+
+Roadmap command:
+
 - `split-task`
 
 Do not rename them before v1 unless real users fail to understand them.
