@@ -230,16 +230,11 @@ Fresh-chat handoff:
 - does not mutate source files
 - does not store raw logs
 
-## `agentkick split-task` Roadmap
+## `agentkick split-task`
 
 Purpose:
 
 - turn a broad AI request into scoped execution chunks
-
-Status:
-
-- not implemented in the current v1 CLI registry
-- planned as a near-term command after launch-readiness docs and package publishing
 
 Inputs:
 
@@ -255,7 +250,10 @@ Behavior:
 - use repo profile and known commands
 - output 2-5 subtasks
 - include scope, non-goals, dependencies, verification
-- optionally write `.agentkick/tasks/<task-id>.md` in a later flag
+- include suggested files when hints are available
+- include one agent-ready prompt per chunk
+- print stable JSON with `--json`
+- no file writes by default
 
 Output:
 
@@ -285,6 +283,7 @@ Boundaries:
 - no autonomous scheduling
 - no agent assignment
 - no semantic code ownership claims
+- no background jobs
 - no file edits by default
 
 ## Command Naming Lock
@@ -294,15 +293,12 @@ Implemented v1 launch commands:
 - `init`
 - `doctor`
 - `focus`
+- `split-task`
 - `summarize`
 
 Secondary implemented commands:
 
 - `new`
 - `add`
-
-Roadmap command:
-
-- `split-task`
 
 Do not rename them before v1 unless real users fail to understand them.

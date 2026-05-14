@@ -13,6 +13,7 @@ AgentKick v1 is a local-first CLI that adds:
 - AI workflow readiness checks
 - explicit context scope
 - compact task continuity
+- lightweight task splitting
 - secondary starter-project templates and workflow packs
 
 It does not add:
@@ -57,6 +58,7 @@ The implemented v1 launch command set is:
 agentkick init
 agentkick doctor
 agentkick focus
+agentkick split-task
 agentkick summarize
 ```
 
@@ -68,6 +70,9 @@ agentkick doctor --strict
 agentkick doctor --json
 agentkick doctor --debug
 agentkick focus <scope>
+agentkick split-task "<task>"
+agentkick split-task "<task>" --files <paths...>
+agentkick split-task "<task>" --json
 agentkick summarize <scope>
 ```
 
@@ -96,7 +101,6 @@ agentkick reset-context
 agentkick compact
 agentkick workflow-state
 agentkick plugin
-agentkick split-task
 ```
 
 Reason:
@@ -104,7 +108,7 @@ Reason:
 - `doctor` owns readiness, scoring, and report output.
 - `focus` owns task context preparation.
 - `summarize` owns reset and handoff support.
-- `split-task` remains a near-term roadmap command because broad AI tasks are a daily pain, but it is not implemented in the current CLI registry.
+- `split-task` owns lightweight task decomposition.
 
 ## v1 Generated Files
 
@@ -205,9 +209,9 @@ Outcome:
 - follow-up
 - reset-ready handoff
 
-## Post-v1 Split-Task Position
+## v1 Split-Task Position
 
-`split-task` is a strong post-v1 candidate because broad prompts are one of the biggest causes of AI failure.
+`split-task` ships because broad prompts are one of the biggest causes of AI failure.
 
 It must stay lightweight.
 
@@ -249,7 +253,7 @@ AgentKick v1 is successful when:
 - Doctor produces useful output before full setup
 - Focus output can be pasted into any coding agent
 - Summaries are short enough to become habit
-- roadmap `split-task` direction remains clear without being presented as shipped
+- `split-task` reduces oversized AI requests without creating bureaucracy
 - the README explains the product in under one minute
 
 ## Final MVP Rule

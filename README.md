@@ -26,6 +26,7 @@ Run this inside an existing repo:
 agentkick init
 agentkick doctor
 agentkick focus auth
+agentkick split-task "add checkout and dashboard"
 agentkick summarize
 ```
 
@@ -34,6 +35,7 @@ What happens:
 - `init` writes reviewable agent instructions and repo memory files.
 - `doctor` checks whether the repo is ready for AI-assisted development.
 - `focus auth` creates scoped task context for one feature or task.
+- `split-task` breaks broad AI requests into scoped execution chunks.
 - `summarize` prints a compact fresh-chat handoff for the next agent session.
 
 ```text
@@ -134,6 +136,37 @@ agentkick focus "fix popup button"
 ```
 
 Focus output tells the next coding agent what to read first, which files are likely relevant, and which boundaries to respect.
+
+### `agentkick split-task`
+
+Turns a broad AI coding request into 2-5 scoped execution chunks without calling an LLM or writing files.
+
+```bash
+agentkick split-task "Add paid checkout and dashboard"
+agentkick split-task "Add paid checkout and dashboard" --files src/app.ts src/billing.ts
+agentkick split-task "Improve extension popup" --json
+```
+
+Example output:
+
+```text
+AgentKick split-task
+
+Task: Add paid checkout and dashboard
+
+Suggested execution:
+1. [do first] Implement billing or checkout flow
+   Scope: billing, checkout, plans, payments, subscriptions
+   Suggested files: src/billing.ts
+   Verification: npm run check
+
+2. Update dashboard experience (parallelizable)
+   Scope: dashboard, reports, settings, account workspace
+   Suggested files: src/app.ts
+   Verification: npm run check
+
+Next: agentkick focus billing
+```
 
 ### `agentkick summarize`
 
@@ -344,7 +377,6 @@ The architecture specs live under [`docs/`](docs/README.md).
 
 Near-term roadmap:
 
-- `agentkick split-task` for breaking broad AI requests into scoped chunks
 - richer focus options for explicit file/task scopes
 - package publishing readiness
 

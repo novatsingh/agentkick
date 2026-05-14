@@ -26,6 +26,7 @@ Examples:
   $ agentkick init
   $ agentkick doctor --debug
   $ agentkick focus auth
+  $ agentkick split-task "add paid checkout"
   $ agentkick summarize
   $ agentkick new ai-saas myapp
   $ agentkick new electron-app desktop-studio
@@ -34,6 +35,7 @@ Workflow:
   init       write repo memory and agent instructions
   doctor     check AI workflow readiness
   focus      create scoped task context
+  split-task break broad requests into scoped chunks
   summarize  compress current state for a fresh chat
 `
     );
