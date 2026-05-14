@@ -11,10 +11,20 @@ It creates durable repo memory, agent operating rules, scoped task context, and 
 ## Install
 
 ```bash
-npm install -g https://github.com/novatsingh/agentkick/archive/refs/heads/main.tar.gz
+npm install -g @novatsingh/agentkick
 ```
 
-> npm package publishing is not live yet. Until the first npm release, install from the GitHub tarball instead of `npx agentkick`.
+Or run without installing:
+
+```bash
+npx @novatsingh/agentkick --help
+```
+
+The installed command is still:
+
+```bash
+agentkick --help
+```
 
 Requires Node.js 20 or newer.
 

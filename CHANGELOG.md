@@ -4,6 +4,7 @@
 
 Initial public release candidate.
 
+- Published package name: `@novatsingh/agentkick`.
 - Added production TypeScript CLI built with Commander and tsup.
 - Added `agentkick init` for generating local-first repo memory and agent operating files.
 - Added `agentkick doctor` with stack detection, structured AI-readiness findings, `--strict`, `--json`, and `--debug`.

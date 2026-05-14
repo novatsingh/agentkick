@@ -1,5 +1,5 @@
 {
-  "name": "agentkick",
+  "name": "@novatsingh/agentkick",
   "version": "0.1.0",
   "description": "Make repos AI-agent-ready with local-first workflow memory, scoped context, safety rules, and readiness checks for Codex, Claude Code, Cursor, Copilot, Windsurf, and MCP.",
   "type": "module",

@@ -13,6 +13,7 @@ npm run smoke
 node dist/index.js --help
 node dist/index.js doctor --json
 npm pack --dry-run
+npm publish --access public --dry-run
 ```
 
 On Windows PowerShell, prefer:
@@ -22,6 +23,7 @@ npm.cmd run check
 npm.cmd run build
 npm.cmd run smoke
 npm.cmd pack --dry-run
+npm.cmd publish --access public --dry-run
 ```
 
 If the default npm cache path fails locally, use a temporary cache:
@@ -56,6 +58,5 @@ Do not publish from an unverified working tree.
 4. Bump `package.json` version if needed.
 5. Commit release changes.
 6. Create a git tag, for example `v0.1.0`.
-7. Run `npm publish --dry-run` if publishing to npm.
+7. Run `npm publish --access public --dry-run` if publishing the scoped public package.
 8. Publish only after the dry-run package contents look correct.
-
