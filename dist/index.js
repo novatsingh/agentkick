@@ -1599,8 +1599,10 @@ function isPack2(value) {
 }
 
 // src/doctor/doctor-engine.ts
-import fs4 from "fs";
-import path5 from "path";
+import fs8 from "fs";
+import path9 from "path";
+
+// src/doctor/constants.ts
 var REQUIRED_AGENT_FILES = [
   ["AGENTS.md", "agent operating rules"],
   ["WORKFLOW_RULES.md", "workflow rules"],
@@ -1666,117 +1668,114 @@ var GENERATED_VENDOR_CANDIDATES = [
   "public/generated",
   "docs/generated"
 ];
-function runDoctor(cwd, options = {}) {
-  const audit = auditRepo(cwd);
-  if (options.json) {
-    console.log(JSON.stringify(jsonAudit(audit), null, 2));
-  } else {
-    printAudit(audit, options);
+
+// src/doctor/checks.ts
+import fs4 from "fs";
+import path5 from "path";
+function requiredFile(cwd, relativePath, label) {
+  const fullPath = path5.join(cwd, relativePath);
+  if (!fs4.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
+  const content = fs4.readFileSync(fullPath, "utf8");
+  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
+  return { ok: true, label, message: relativePath };
+}
+function optionalFile(cwd, relativePath, label) {
+  const fullPath = path5.join(cwd, relativePath);
+  if (!fs4.existsSync(fullPath)) return { ok: true, label, message: `optional: ${relativePath} not present` };
+  const content = fs4.readFileSync(fullPath, "utf8");
+  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
+  return { ok: true, label, message: relativePath };
+}
+
+// src/doctor/findings.ts
+import fs7 from "fs";
+import path8 from "path";
+
+// src/doctor/scanner.ts
+import fs6 from "fs";
+import path7 from "path";
+
+// src/doctor/utils.ts
+import fs5 from "fs";
+import path6 from "path";
+function pathCoveredByGuidance(item, guidance) {
+  const lower = item.toLowerCase();
+  if (guidance.includes(lower)) return true;
+  if (["dist", "build", "out", ".next", ".turbo", "coverage", "release"].includes(lower)) {
+    return guidance.includes("generated") || guidance.includes("build");
   }
-  if (options.strict && (audit.findings.some((finding2) => finding2.priority === "P0") || audit.score < 85)) {
-    process.exitCode = 1;
+  if (["node_modules", "vendor", "target"].includes(lower)) {
+    return guidance.includes("vendor") || guidance.includes("dependency");
+  }
+  return false;
+}
+function commandFor(profileCommand, scriptName, packageScript) {
+  if (profileCommand && !profileCommand.startsWith("document ")) return profileCommand;
+  if (packageScript) return scriptName === "test" ? "npm test" : "npm run build";
+  return "not detected";
+}
+function readFileSafe2(file2) {
+  try {
+    return fs5.readFileSync(file2, "utf8");
+  } catch {
+    return "";
   }
 }
-function auditRepo(cwd) {
-  const packageInfo = readJsonSafe(path5.join(cwd, "package.json"));
-  const config = readJsonSafe(path5.join(cwd, ".agentkick.json"));
-  const workflowState = readJsonSafe(path5.join(cwd, ".agentkick", "workflow-state.json"));
-  const profile = detectProject(cwd);
-  const checks = [
-    ...REQUIRED_AGENT_FILES.map(([file2, label]) => requiredFile(cwd, file2, label)),
-    ...OPTIONAL_AGENT_FILES.map(([file2, label]) => optionalFile(cwd, file2, label))
-  ];
-  const verificationCommand2 = commandFor(profile.testCommand, "test", packageInfo?.scripts?.test);
-  const buildCommand = commandFor(profile.buildCommand, "build", packageInfo?.scripts?.build);
-  const analysis = analyzeWorkflow(cwd, packageInfo, config, workflowState);
-  const findings = analysisFindings(cwd, packageInfo, config, workflowState, analysis);
-  const failures = checks.filter((check) => !check.ok).map((check) => check.message);
-  const scoreValue = readinessScore(findings);
-  const statusValue = statusFor(scoreValue, findings);
+function lineCount2(content) {
+  if (!content) return 0;
+  return content.split(/\r?\n/).length;
+}
+function directoryExists2(cwd, relativePath) {
+  try {
+    return fs5.statSync(path6.join(cwd, relativePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function isMemoryFile(relativePath) {
+  return relativePath.endsWith(".md") || relativePath === ".agentkick.json";
+}
+function slug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "root";
+}
+function slash2(value) {
+  return value.replace(/\\/g, "/");
+}
+function fallbackDetection(cwd, stack, detected) {
   return {
-    schemaVersion: 1,
-    command: "doctor",
-    score: scoreValue,
-    status: statusValue,
-    detectedStack: profile.primaryStack ?? profile.template,
-    detectedCapabilities: profile.capabilities ?? [],
-    verificationCommand: verificationCommand2,
-    buildCommand,
-    nextCommand: nextCommandFor(findings),
-    findings,
-    generatedVendorPaths: analysis.generatedVendorPaths,
-    missingMemoryFiles: analysis.missingMemoryFiles,
-    checks,
-    warnings: findings.filter((finding2) => finding2.priority !== "P0").map(findingMessage),
-    failures: [...failures, ...findings.filter((finding2) => finding2.priority === "P0").map(findingMessage)],
-    suggestions: suggestionsFor(findings),
-    detectionDebug: profile.detection ?? fallbackDetection(cwd, profile.primaryStack ?? profile.template, profile.stack),
-    analysis
+    cwd,
+    primaryStack: stack,
+    capabilities: [],
+    detected,
+    workspaceHints: [],
+    filesChecked: [],
+    dependencies: [],
+    configFiles: [],
+    reasoning: []
   };
 }
-function analyzeWorkflow(cwd, packageInfo, config, workflowState) {
-  const files = scanRepoFiles(cwd);
-  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
-  const reactFiles = sourceFiles.filter((file2) => file2.isReact);
-  const generatedVendorPaths = GENERATED_VENDOR_CANDIDATES.filter((candidate) => directoryExists2(cwd, candidate));
-  const missingMemoryFiles = WORKFLOW_MEMORY_FILES.filter((file2) => !fs4.existsSync(path5.join(cwd, file2)));
-  const preliminary = [
-    ...memoryFindings(cwd, missingMemoryFiles, workflowState),
-    ...verificationFindings(packageInfo, config),
-    ...generatedVendorFindings(cwd, generatedVendorPaths),
-    ...sourceFileFindings(sourceFiles),
-    ...reactFindings(reactFiles),
-    ...modularityFindings(cwd, sourceFiles),
-    ...taskStateFindings(cwd, workflowState),
-    ...ciFindings(cwd)
-  ];
-  return {
-    filesScanned: files.length,
-    sourceFiles: sourceFiles.length,
-    reactFiles: reactFiles.length,
-    largestFiles: [...sourceFiles].sort((a, b) => b.lines - a.lines || b.bytes - a.bytes).slice(0, 8),
-    generatedVendorPaths,
-    missingMemoryFiles,
-    contextWasteZones: preliminary.filter(
-      (finding2) => ["context-waste", "token-waste", "file-size", "react-component"].includes(finding2.category)
-    )
-  };
-}
-function analysisFindings(cwd, packageInfo, config, workflowState, analysis) {
-  const files = scanRepoFiles(cwd);
-  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
-  const reactFiles = sourceFiles.filter((file2) => file2.isReact);
-  return [
-    ...memoryFindings(cwd, analysis.missingMemoryFiles, workflowState),
-    ...verificationFindings(packageInfo, config),
-    ...generatedVendorFindings(cwd, analysis.generatedVendorPaths),
-    ...sourceFileFindings(sourceFiles),
-    ...reactFindings(reactFiles),
-    ...modularityFindings(cwd, sourceFiles),
-    ...taskStateFindings(cwd, workflowState),
-    ...ciFindings(cwd)
-  ].sort(compareFindings);
-}
+
+// src/doctor/scanner.ts
 function scanRepoFiles(cwd) {
   const results = [];
   const walk = (dir) => {
     let entries;
     try {
-      entries = fs4.readdirSync(dir, { withFileTypes: true });
+      entries = fs6.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const fullPath = path5.join(dir, entry.name);
-      const relativePath = slash2(path5.relative(cwd, fullPath));
+      const fullPath = path7.join(dir, entry.name);
+      const relativePath = slash2(path7.relative(cwd, fullPath));
       if (entry.isDirectory()) {
         if (!SCAN_IGNORED_DIRS.has(entry.name)) walk(fullPath);
         continue;
       }
       if (!entry.isFile()) continue;
-      const extension = path5.extname(entry.name).toLowerCase();
+      const extension = path7.extname(entry.name).toLowerCase();
       if (!SOURCE_EXTENSIONS2.has(extension) && !isMemoryFile(relativePath)) continue;
-      const stats = fs4.statSync(fullPath);
+      const stats = fs6.statSync(fullPath);
       if (stats.size > 7e5) continue;
       const content = readFileSafe2(fullPath);
       results.push({
@@ -1792,9 +1791,26 @@ function scanRepoFiles(cwd) {
   walk(cwd);
   return results;
 }
+
+// src/doctor/findings.ts
+function analysisFindings(cwd, packageInfo, config, workflowState, analysis) {
+  const files = scanRepoFiles(cwd);
+  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
+  const reactFiles = sourceFiles.filter((file2) => file2.isReact);
+  return [
+    ...memoryFindings(cwd, analysis.missingMemoryFiles, workflowState),
+    ...verificationFindings(packageInfo, config),
+    ...generatedVendorFindings(cwd, analysis.generatedVendorPaths),
+    ...sourceFileFindings(sourceFiles),
+    ...reactFindings(reactFiles),
+    ...modularityFindings(cwd, sourceFiles),
+    ...taskStateFindings(cwd, workflowState),
+    ...ciFindings(cwd)
+  ].sort(compareFindings);
+}
 function memoryFindings(cwd, missingFiles, workflowState) {
   const findings = [];
-  if (!fs4.existsSync(path5.join(cwd, ".agentkick.json"))) {
+  if (!fs7.existsSync(path8.join(cwd, ".agentkick.json"))) {
     findings.push(
       finding({
         id: "memory.missing-agentkick-config",
@@ -1825,8 +1841,8 @@ function memoryFindings(cwd, missingFiles, workflowState) {
     );
   }
   for (const file2 of WORKFLOW_MEMORY_FILES) {
-    const fullPath = path5.join(cwd, file2);
-    if (!fs4.existsSync(fullPath)) continue;
+    const fullPath = path8.join(cwd, file2);
+    if (!fs7.existsSync(fullPath)) continue;
     const content = readFileSafe2(fullPath);
     const lines = lineCount2(content);
     if (content.trim().length < 80) {
@@ -1944,8 +1960,8 @@ function verificationFindings(packageInfo, config) {
 }
 function generatedVendorFindings(cwd, paths) {
   if (paths.length === 0) return [];
-  const guidance = `${readFileSafe2(path5.join(cwd, "WORKFLOW_RULES.md"))}
-${readFileSafe2(path5.join(cwd, "AGENTS.md"))}`;
+  const guidance = `${readFileSafe2(path8.join(cwd, "WORKFLOW_RULES.md"))}
+${readFileSafe2(path8.join(cwd, "AGENTS.md"))}`;
   const lowerGuidance = guidance.toLowerCase();
   return paths.filter((item) => !pathCoveredByGuidance(item, lowerGuidance)).slice(0, 8).map(
     (item) => finding({
@@ -2052,8 +2068,8 @@ function modularityFindings(cwd, sourceFiles) {
 }
 function taskStateFindings(cwd, workflowState) {
   const findings = [];
-  const currentTaskPath = path5.join(cwd, "CURRENT_TASK.md");
-  if (!fs4.existsSync(currentTaskPath)) return findings;
+  const currentTaskPath = path8.join(cwd, "CURRENT_TASK.md");
+  if (!fs7.existsSync(currentTaskPath)) return findings;
   const currentTask = readFileSafe2(currentTaskPath);
   if (!/active scope|current task|status/i.test(currentTask)) {
     findings.push(
@@ -2092,7 +2108,7 @@ function taskStateFindings(cwd, workflowState) {
   return findings;
 }
 function ciFindings(cwd) {
-  if (fs4.existsSync(path5.join(cwd, ".github", "workflows"))) return [];
+  if (fs7.existsSync(path8.join(cwd, ".github", "workflows"))) return [];
   return [
     finding({
       id: "workflow.no-ci",
@@ -2106,16 +2122,30 @@ function ciFindings(cwd) {
     })
   ];
 }
-function readinessScore(findings) {
-  const weights = { P0: 22, P1: 12, P2: 6, P3: 2 };
-  const penalty = findings.reduce((total, finding2) => total + weights[finding2.priority], 0);
-  return Math.max(0, Math.min(100, 100 - penalty));
+function suggestionsFor(findings) {
+  return [...new Set(findings.map((finding2) => finding2.recommendation))].slice(0, 10);
 }
-function statusFor(scoreValue, findings) {
-  if (findings.some((finding2) => finding2.priority === "P0")) return "blocked";
-  if (scoreValue >= 85) return "ready";
-  return "needs-review";
+function findingMessage(finding2) {
+  return `${finding2.priority} ${finding2.title}${finding2.file ? ` (${finding2.file})` : ""}: ${finding2.signal}`;
 }
+function nextCommandFor(findings) {
+  if (findings.some(
+    (finding2) => finding2.priority === "P0" && (finding2.category === "memory" || finding2.category === "continuity")
+  )) {
+    return "agentkick init --dry-run";
+  }
+  if (findings.some((finding2) => finding2.category === "context-waste")) return "agentkick split-task <task>";
+  return "agentkick focus <scope>";
+}
+function finding(input2) {
+  return input2;
+}
+function compareFindings(a, b) {
+  const order = { P0: 0, P1: 1, P2: 2, P3: 3 };
+  return order[a.priority] - order[b.priority] || a.category.localeCompare(b.category) || a.title.localeCompare(b.title);
+}
+
+// src/doctor/report.ts
 function printAudit(audit, options) {
   console.log(header("AgentKick doctor", "AI workflow readiness for this repository."));
   console.log("");
@@ -2183,51 +2213,6 @@ function printMissingMemory(audit) {
   for (const item of audit.missingMemoryFiles) console.log(bullet(item));
   console.log("");
 }
-function requiredFile(cwd, relativePath, label) {
-  const fullPath = path5.join(cwd, relativePath);
-  if (!fs4.existsSync(fullPath)) return { ok: false, label, message: `missing ${relativePath}` };
-  const content = fs4.readFileSync(fullPath, "utf8");
-  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
-  return { ok: true, label, message: relativePath };
-}
-function optionalFile(cwd, relativePath, label) {
-  const fullPath = path5.join(cwd, relativePath);
-  if (!fs4.existsSync(fullPath)) return { ok: true, label, message: `optional: ${relativePath} not present` };
-  const content = fs4.readFileSync(fullPath, "utf8");
-  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
-  return { ok: true, label, message: relativePath };
-}
-function suggestionsFor(findings) {
-  return [...new Set(findings.map((finding2) => finding2.recommendation))].slice(0, 10);
-}
-function findingMessage(finding2) {
-  return `${finding2.priority} ${finding2.title}${finding2.file ? ` (${finding2.file})` : ""}: ${finding2.signal}`;
-}
-function nextCommandFor(findings) {
-  if (findings.some(
-    (finding2) => finding2.priority === "P0" && (finding2.category === "memory" || finding2.category === "continuity")
-  )) {
-    return "agentkick init --dry-run";
-  }
-  if (findings.some((finding2) => finding2.category === "context-waste")) return "agentkick split-task <task>";
-  return "agentkick focus <scope>";
-}
-function pathCoveredByGuidance(item, guidance) {
-  const lower = item.toLowerCase();
-  if (guidance.includes(lower)) return true;
-  if (["dist", "build", "out", ".next", ".turbo", "coverage", "release"].includes(lower)) {
-    return guidance.includes("generated") || guidance.includes("build");
-  }
-  if (["node_modules", "vendor", "target"].includes(lower)) {
-    return guidance.includes("vendor") || guidance.includes("dependency");
-  }
-  return false;
-}
-function commandFor(profileCommand, scriptName, packageScript) {
-  if (profileCommand && !profileCommand.startsWith("document ")) return profileCommand;
-  if (packageScript) return scriptName === "test" ? "npm test" : "npm run build";
-  return "not detected";
-}
 function jsonAudit(audit) {
   return {
     schemaVersion: audit.schemaVersion,
@@ -2247,53 +2232,6 @@ function jsonAudit(audit) {
     checks: audit.checks,
     warnings: audit.warnings,
     failures: audit.failures
-  };
-}
-function finding(input2) {
-  return input2;
-}
-function compareFindings(a, b) {
-  const order = { P0: 0, P1: 1, P2: 2, P3: 3 };
-  return order[a.priority] - order[b.priority] || a.category.localeCompare(b.category) || a.title.localeCompare(b.title);
-}
-function readFileSafe2(file2) {
-  try {
-    return fs4.readFileSync(file2, "utf8");
-  } catch {
-    return "";
-  }
-}
-function lineCount2(content) {
-  if (!content) return 0;
-  return content.split(/\r?\n/).length;
-}
-function directoryExists2(cwd, relativePath) {
-  try {
-    return fs4.statSync(path5.join(cwd, relativePath)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-function isMemoryFile(relativePath) {
-  return relativePath.endsWith(".md") || relativePath === ".agentkick.json";
-}
-function slug(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "root";
-}
-function slash2(value) {
-  return value.replace(/\\/g, "/");
-}
-function fallbackDetection(cwd, stack, detected) {
-  return {
-    cwd,
-    primaryStack: stack,
-    capabilities: [],
-    detected,
-    workspaceHints: [],
-    filesChecked: [],
-    dependencies: [],
-    configFiles: [],
-    reasoning: []
   };
 }
 function printDetectionDebug(detection) {
@@ -2339,6 +2277,103 @@ function printList(items) {
     return;
   }
   for (const item of items) console.log(bullet(item));
+}
+
+// src/doctor/doctor-engine.ts
+function runDoctor(cwd, options = {}) {
+  const audit = auditRepo(cwd);
+  if (options.json) {
+    console.log(JSON.stringify(jsonAudit(audit), null, 2));
+  } else {
+    printAudit(audit, options);
+  }
+  if (options.strict && (audit.findings.some((finding2) => finding2.priority === "P0") || audit.score < 85)) {
+    process.exitCode = 1;
+  }
+}
+function auditRepo(cwd) {
+  const packageInfo = readJsonSafe(path9.join(cwd, "package.json"));
+  const config = readJsonSafe(path9.join(cwd, ".agentkick.json"));
+  const workflowState = readJsonSafe(path9.join(cwd, ".agentkick", "workflow-state.json"));
+  const profile = detectProject(cwd);
+  const checks = [
+    ...REQUIRED_AGENT_FILES.map(([file2, label]) => requiredFile(cwd, file2, label)),
+    ...OPTIONAL_AGENT_FILES.map(([file2, label]) => optionalFile(cwd, file2, label))
+  ];
+  const verificationCommand2 = commandFor(profile.testCommand, "test", packageInfo?.scripts?.test);
+  const buildCommand = commandFor(profile.buildCommand, "build", packageInfo?.scripts?.build);
+  const analysis = analyzeWorkflow(cwd, packageInfo, config, workflowState);
+  const findings = analysisFindings(cwd, packageInfo, config, workflowState, analysis);
+  const failures = checks.filter((check) => !check.ok).map((check) => check.message);
+  const scoreValue = readinessScore(findings);
+  const statusValue = statusFor(scoreValue, findings);
+  return {
+    schemaVersion: 1,
+    command: "doctor",
+    score: scoreValue,
+    status: statusValue,
+    detectedStack: profile.primaryStack ?? profile.template,
+    detectedCapabilities: profile.capabilities ?? [],
+    verificationCommand: verificationCommand2,
+    buildCommand,
+    nextCommand: nextCommandFor(findings),
+    findings,
+    generatedVendorPaths: analysis.generatedVendorPaths,
+    missingMemoryFiles: analysis.missingMemoryFiles,
+    checks,
+    warnings: findings.filter((finding2) => finding2.priority !== "P0").map(findingMessage),
+    failures: [...failures, ...findings.filter((finding2) => finding2.priority === "P0").map(findingMessage)],
+    suggestions: suggestionsFor(findings),
+    detectionDebug: profile.detection ?? fallbackDetection(cwd, profile.primaryStack ?? profile.template, profile.stack),
+    analysis
+  };
+}
+function analyzeWorkflow(cwd, packageInfo, config, workflowState) {
+  const files = scanRepoFiles(cwd);
+  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
+  const reactFiles = sourceFiles.filter((file2) => file2.isReact);
+  const generatedVendorPaths = GENERATED_VENDOR_CANDIDATES.filter((candidate) => directoryExists2(cwd, candidate));
+  const missingMemoryFiles = WORKFLOW_MEMORY_FILES.filter(
+    (file2) => !directoryExists2(cwd, file2) && !pathExists(cwd, file2)
+  );
+  const preliminary = [
+    ...memoryFindings(cwd, missingMemoryFiles, workflowState),
+    ...verificationFindings(packageInfo, config),
+    ...generatedVendorFindings(cwd, generatedVendorPaths),
+    ...sourceFileFindings(sourceFiles),
+    ...reactFindings(reactFiles),
+    ...modularityFindings(cwd, sourceFiles),
+    ...taskStateFindings(cwd, workflowState),
+    ...ciFindings(cwd)
+  ];
+  return {
+    filesScanned: files.length,
+    sourceFiles: sourceFiles.length,
+    reactFiles: reactFiles.length,
+    largestFiles: [...sourceFiles].sort((a, b) => b.lines - a.lines || b.bytes - a.bytes).slice(0, 8),
+    generatedVendorPaths,
+    missingMemoryFiles,
+    contextWasteZones: preliminary.filter(
+      (finding2) => ["context-waste", "token-waste", "file-size", "react-component"].includes(finding2.category)
+    )
+  };
+}
+function readinessScore(findings) {
+  const weights = { P0: 22, P1: 12, P2: 6, P3: 2 };
+  const penalty = findings.reduce((total, finding2) => total + weights[finding2.priority], 0);
+  return Math.max(0, Math.min(100, 100 - penalty));
+}
+function statusFor(scoreValue, findings) {
+  if (findings.some((finding2) => finding2.priority === "P0")) return "blocked";
+  if (scoreValue >= 85) return "ready";
+  return "needs-review";
+}
+function pathExists(cwd, relativePath) {
+  try {
+    return fs8.existsSync(path9.join(cwd, relativePath));
+  } catch {
+    return false;
+  }
 }
 
 // src/commands/doctor.ts
@@ -2434,217 +2469,12 @@ Examples:
 }
 
 // src/commands/new.ts
-import fs5 from "fs";
-import path6 from "path";
+import fs9 from "fs";
+import path10 from "path";
 import { input, select } from "@inquirer/prompts";
 import { z } from "zod";
 
-// src/templates/project-templates.ts
-var TEMPLATE_REGISTRY = {
-  "ai-saas": {
-    id: "ai-saas",
-    label: "AI SaaS",
-    description: "Next.js product shell with AI workflow, API, and feature boundaries.",
-    files: aiSaasFiles,
-    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
-  },
-  "chrome-extension": {
-    id: "chrome-extension",
-    label: "Chrome Extension",
-    description: "Manifest V3 extension with popup, background, content, and shared modules.",
-    files: chromeExtensionFiles,
-    nextSteps: ["npm install", "npm run package", "agentkick doctor"]
-  },
-  marketplace: {
-    id: "marketplace",
-    label: "Marketplace",
-    description: "Next.js marketplace starter with vendor, listing, order, and admin boundaries.",
-    files: marketplaceFiles,
-    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
-  },
-  saas: {
-    id: "saas",
-    label: "SaaS",
-    description: "Next.js SaaS starter with account, billing, workspace, and API boundaries.",
-    files: saasFiles,
-    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
-  },
-  "internal-tool": {
-    id: "internal-tool",
-    label: "Internal Tool",
-    description: "Vite React operations tool with dashboard, workflow, and API-client boundaries.",
-    files: internalToolFiles,
-    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
-  },
-  "electron-app": {
-    id: "electron-app",
-    label: "Electron App",
-    description: "Electron desktop app with React, Vite, preload bridge, and IPC boundaries.",
-    files: electronAppFiles,
-    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
-  },
-  "tauri-app": {
-    id: "tauri-app",
-    label: "Tauri App",
-    description: "Tauri desktop app with React, Vite, Rust commands, and minimal capabilities.",
-    files: tauriAppFiles,
-    nextSteps: ["npm install", "npm run dev", "agentkick doctor"]
-  }
-};
-function getTemplateDefinition(template) {
-  return TEMPLATE_REGISTRY[template];
-}
-function templateChoices() {
-  return Object.values(TEMPLATE_REGISTRY).map((template) => ({
-    name: template.label,
-    value: template.id,
-    description: template.description
-  }));
-}
-function writeTemplateProject(projectDir, profile) {
-  const template = getTemplateDefinition(profile.template);
-  if (!template) throw new Error(`template writer missing for "${profile.template}"`);
-  for (const file2 of sharedMemoryFiles(profile, template)) {
-    writeFile(projectDir, file2.path, render(file2.content, variablesFor(profile, template)));
-  }
-  for (const file2 of template.files(profile)) {
-    writeFile(projectDir, file2.path, render(file2.content, variablesFor(profile, template)));
-  }
-  writeFile(projectDir, "README.md", readmeFor(profile));
-  writeFile(projectDir, ".gitignore", gitignoreFor(profile));
-}
-function postInstallStepsFor(template) {
-  return getTemplateDefinition(template).nextSteps;
-}
-function sharedMemoryFiles(profile, template) {
-  return [
-    {
-      path: "CURRENT_TASK.md",
-      content: `# Current Task
-
-## Status
-
-No active task.
-
-## Active Scope
-
-- Template: {{templateLabel}}
-- Project: {{projectTitle}}
-- Primary stack: ${profile.stack.join(", ")}
-
-## Next Execution
-
-- Run \`${profile.testCommand}\` before handing work back.
-- Keep task notes short and move completed work into \`TASK_HISTORY.md\`.
-- Start each new agent session by reading \`AGENTS.md\`, \`CURRENT_TASK.md\`, and \`ARCHITECTURE.md\`.
-`
-    },
-    {
-      path: "ARCHITECTURE.md",
-      content: `# Architecture
-
-## System Shape
-
-{{projectTitle}} is a {{templateLabel}} project generated for AI-assisted development.
-
-## Boundaries
-
-- \`src/core\`: shared primitives, configuration, and framework-neutral helpers.
-- \`src/features\`: feature modules with local UI, workflow, and service code.
-- \`src/app\` or \`app\`: route and composition layer.
-- \`src/shared\`: small reusable utilities that are stable across features.
-- \`docs\`: product, workflow, and launch notes.
-
-## Agent Rules
-
-- Edit inside one feature boundary when possible.
-- Move reusable behavior to \`src/core\` only after two real call sites exist.
-- Keep route handlers thin and push business behavior into feature modules.
-- Do not add cross-feature imports without documenting the dependency here.
-`
-    },
-    {
-      path: "WORKFLOW_RULES.md",
-      content: `# Workflow Rules
-
-## Context Loading
-
-1. Read \`AGENTS.md\`.
-2. Read \`CURRENT_TASK.md\`.
-3. Read the feature README for the scoped module.
-4. Open only the files required for the task.
-
-## Update Rules
-
-- Update \`CURRENT_TASK.md\` when task scope changes.
-- Add durable decisions to \`DECISIONS.md\`.
-- Add completed task notes to \`TASK_HISTORY.md\`.
-- Keep generated memory concise. Prefer bullets over long prose.
-
-## Execution Discipline
-
-- One task, one feature scope, one verification command.
-- Avoid broad rewrites during focused fixes.
-- Do not mix product, auth, billing, and database changes in the same task unless explicitly requested.
-`
-    },
-    {
-      path: "FEATURE_SUMMARIES.md",
-      content: `# Feature Summaries
-
-Keep one short section per feature. Each section should explain ownership, important files, and current risks.
-
-## Template Features
-
-- Project type: {{templateLabel}}
-- Source boundaries are documented in \`ARCHITECTURE.md\`.
-- Add feature entries when implementation begins.
-`
-    },
-    {
-      path: "DECISIONS.md",
-      content: `# Decisions
-
-Record durable technical and product decisions here. Keep entries short enough for agents to scan.
-
-## Format
-
-- Date:
-- Decision:
-- Context:
-- Consequences:
-`
-    },
-    {
-      path: "TASK_HISTORY.md",
-      content: `# Task History
-
-Record completed work here after it is verified.
-
-## Entries
-
-- No completed tasks yet.
-`
-    },
-    {
-      path: "docs/PROJECT_MAP.md",
-      content: `# Project Map
-
-## Template
-
-- Type: {{templateLabel}}
-- Description: ${template.description}
-
-## First Files To Read
-
-- \`AGENTS.md\`
-- \`CURRENT_TASK.md\`
-- \`ARCHITECTURE.md\`
-- \`WORKFLOW_RULES.md\`
-`
-    }
-  ];
-}
+// src/templates/chrome-extension-template.ts
 function chromeExtensionFiles(profile) {
   return [
     {
@@ -2829,350 +2659,8 @@ Keep feature code grouped by browser surface:
     }
   ];
 }
-function aiSaasFiles(profile) {
-  return [
-    ...nextPackageFiles(profile, "AI SaaS application generated by AgentKick."),
-    ...nextBaseFiles(
-      "Build the AI workflow layer first.",
-      "Design workflows that agents can understand and users can trust."
-    ),
-    {
-      path: "app/api/workflows/route.ts",
-      content: `import { NextResponse } from "next/server";
-import { listWorkflowRuns } from "@/src/features/workflows/server/workflow-service";
 
-export async function GET() {
-  return NextResponse.json({ workflows: listWorkflowRuns() });
-}
-`
-    },
-    {
-      path: "src/features/workflows/server/workflow-service.ts",
-      content: `export type WorkflowRun = {
-  id: string;
-  name: string;
-  status: "queued" | "running" | "complete";
-};
-
-const runs: WorkflowRun[] = [
-  { id: "demo-onboarding", name: "Onboarding analysis", status: "queued" }
-];
-
-export function listWorkflowRuns() {
-  return runs;
-}
-`
-    },
-    {
-      path: "src/features/workflows/README.md",
-      content: `# Workflows
-
-Owns AI workflow runs, execution state, and task handoff boundaries.
-
-Agents should keep prompt, execution, and result handling separate in this feature.
-`
-    },
-    {
-      path: "src/features/memory/README.md",
-      content: `# Memory
-
-Owns durable project and customer-facing memory. Do not store secrets here.
-
-Use small typed records and summarize long-running state before it enters prompts.
-`
-    },
-    {
-      path: "src/core/env.ts",
-      content: `export function requiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(\`Missing required environment variable: \${name}\`);
-  return value;
-}
-`
-    }
-  ];
-}
-function saasFiles(profile) {
-  return [
-    ...nextPackageFiles(profile, "SaaS application generated by AgentKick."),
-    ...nextBaseFiles(
-      "Build the smallest useful customer workspace.",
-      "Keep account, billing, and workspace boundaries explicit."
-    ),
-    {
-      path: "src/features/accounts/README.md",
-      content: `# Accounts
-
-Owns user, organization, and membership behavior.
-
-Do not mix billing or product workflow behavior into this module.
-`
-    },
-    {
-      path: "src/features/billing/README.md",
-      content: `# Billing
-
-Owns plans, subscriptions, invoices, and payment-provider boundaries.
-
-Agents must call out migration impact before changing billing contracts.
-`
-    },
-    {
-      path: "src/features/workspaces/README.md",
-      content: `# Workspaces
-
-Owns the customer workspace shell and scoped project data.
-`
-    },
-    {
-      path: "app/api/health/route.ts",
-      content: `import { NextResponse } from "next/server";
-
-export async function GET() {
-  return NextResponse.json({ ok: true, service: "{{projectName}}" });
-}
-`
-    }
-  ];
-}
-function marketplaceFiles(profile) {
-  return [
-    ...nextPackageFiles(profile, "Marketplace application generated by AgentKick."),
-    ...nextBaseFiles(
-      "Build the marketplace trust loop first.",
-      "Keep vendor, listing, order, and admin modules isolated."
-    ),
-    {
-      path: "src/features/vendors/README.md",
-      content: `# Vendors
-
-Owns seller onboarding, profiles, approval state, and vendor operations.
-`
-    },
-    {
-      path: "src/features/listings/README.md",
-      content: `# Listings
-
-Owns catalog items, availability, pricing display, and listing quality checks.
-`
-    },
-    {
-      path: "src/features/orders/README.md",
-      content: `# Orders
-
-Owns checkout handoff, order lifecycle, fulfillment state, and customer updates.
-`
-    },
-    {
-      path: "src/features/admin/README.md",
-      content: `# Admin
-
-Owns marketplace moderation, trust operations, and support workflows.
-`
-    },
-    {
-      path: "app/api/marketplace/route.ts",
-      content: `import { NextResponse } from "next/server";
-
-export async function GET() {
-  return NextResponse.json({
-    vendors: [],
-    listings: [],
-    orders: []
-  });
-}
-`
-    }
-  ];
-}
-function internalToolFiles(profile) {
-  return [
-    {
-      path: "package.json",
-      content: json({
-        name: profile.name,
-        version: "0.1.0",
-        private: true,
-        type: "module",
-        scripts: { dev: "vite", build: "tsc --noEmit && vite build", preview: "vite preview", test: "npm run build" },
-        dependencies: { "@vitejs/plugin-react": "latest", vite: "latest", react: "latest", "react-dom": "latest" },
-        devDependencies: {
-          typescript: "latest",
-          "@types/node": "latest",
-          "@types/react": "latest",
-          "@types/react-dom": "latest"
-        }
-      })
-    },
-    {
-      path: "index.html",
-      content: `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{projectTitle}}</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/app/main.tsx"></script>
-  </body>
-</html>
-`
-    },
-    {
-      path: "src/app/main.tsx",
-      content: `import React from "react";
-import { createRoot } from "react-dom/client";
-import { App } from "./App";
-import "./styles.css";
-
-createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-`
-    },
-    {
-      path: "src/app/App.tsx",
-      content: `import { WorkflowQueue } from "../features/workflows/WorkflowQueue";
-
-export function App() {
-  return (
-    <main className="shell">
-      <section>
-        <p className="eyebrow">Internal Tool</p>
-        <h1>{{projectTitle}}</h1>
-        <p>Operate repeatable workflows with clear ownership and agent-readable task boundaries.</p>
-      </section>
-      <WorkflowQueue />
-    </main>
-  );
-}
-`
-    },
-    {
-      path: "src/app/styles.css",
-      content: `:root {
-  color-scheme: light;
-  --bg: #f6f7f9;
-  --ink: #101827;
-  --muted: #5c6678;
-  --line: #d9e0ea;
-  --accent: #0f766e;
-}
-
-body {
-  margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--bg);
-  color: var(--ink);
-}
-
-.shell {
-  width: min(1040px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 48px 0;
-  display: grid;
-  gap: 24px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0 0 12px;
-  font-size: clamp(34px, 6vw, 64px);
-  line-height: 1;
-}
-
-.queue {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: white;
-  padding: 20px;
-}
-`
-    },
-    {
-      path: "src/features/workflows/WorkflowQueue.tsx",
-      content: `const tasks = [
-  { id: "ops-review", title: "Review blocked workflows", owner: "operations" },
-  { id: "customer-sync", title: "Sync customer updates", owner: "support" }
-];
-
-export function WorkflowQueue() {
-  return (
-    <section className="queue" aria-label="Workflow queue">
-      <h2>Workflow queue</h2>
-      {tasks.map((task) => (
-        <article key={task.id}>
-          <strong>{task.title}</strong>
-          <p>Owner: {task.owner}</p>
-        </article>
-      ))}
-    </section>
-  );
-}
-`
-    },
-    {
-      path: "src/core/api-client.ts",
-      content: `export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(\`Request failed: \${response.status}\`);
-  return response.json() as Promise<T>;
-}
-`
-    },
-    {
-      path: "src/features/reports/README.md",
-      content: `# Reports
-
-Owns operational reporting, exports, and dashboard metrics.
-`
-    },
-    {
-      path: "tsconfig.json",
-      content: json({
-        compilerOptions: {
-          target: "ES2020",
-          useDefineForClassFields: true,
-          lib: ["DOM", "DOM.Iterable", "ES2020"],
-          allowJs: false,
-          skipLibCheck: true,
-          esModuleInterop: true,
-          allowSyntheticDefaultImports: true,
-          strict: true,
-          forceConsistentCasingInFileNames: true,
-          module: "ESNext",
-          moduleResolution: "Node",
-          resolveJsonModule: true,
-          isolatedModules: true,
-          noEmit: true,
-          jsx: "react-jsx"
-        },
-        include: ["src"],
-        references: []
-      })
-    },
-    {
-      path: "vite.config.ts",
-      content: `import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-
-export default defineConfig({
-  plugins: [react()]
-});
-`
-    }
-  ];
-}
+// src/templates/desktop-templates.ts
 function electronAppFiles(profile) {
   return [
     {
@@ -3652,6 +3140,462 @@ fn main() {
     }
   ];
 }
+function desktopStyles(stackName) {
+  return `:root {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --ink: #101827;
+  --muted: #5c6678;
+  --line: #d8e0eb;
+  --accent: #1f5eff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 760px;
+  min-height: 520px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.shell {
+  min-height: 100vh;
+  width: min(1040px, calc(100% - 48px));
+  margin: 0 auto;
+  display: grid;
+  align-content: center;
+  gap: 24px;
+}
+
+.hero {
+  display: grid;
+  gap: 12px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 760px;
+  margin: 0;
+  font-size: 56px;
+  line-height: 1;
+}
+
+p {
+  max-width: 660px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.panel {
+  width: min(480px, 100%);
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 18px;
+}
+
+.panel span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.panel strong {
+  font-size: 18px;
+}
+
+button {
+  width: fit-content;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 820px) {
+  body {
+    min-width: 0;
+  }
+
+  .shell {
+    width: min(100% - 32px, 1040px);
+  }
+
+  h1 {
+    font-size: 40px;
+  }
+}
+
+/* ${stackName} template: keep native bridge code outside the UI surface. */
+`;
+}
+
+// src/templates/internal-tool-template.ts
+function internalToolFiles(profile) {
+  return [
+    {
+      path: "package.json",
+      content: json({
+        name: profile.name,
+        version: "0.1.0",
+        private: true,
+        type: "module",
+        scripts: { dev: "vite", build: "tsc --noEmit && vite build", preview: "vite preview", test: "npm run build" },
+        dependencies: { "@vitejs/plugin-react": "latest", vite: "latest", react: "latest", "react-dom": "latest" },
+        devDependencies: {
+          typescript: "latest",
+          "@types/node": "latest",
+          "@types/react": "latest",
+          "@types/react-dom": "latest"
+        }
+      })
+    },
+    {
+      path: "index.html",
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{projectTitle}}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>
+`
+    },
+    {
+      path: "src/app/main.tsx",
+      content: `import React from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import "./styles.css";
+
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+`
+    },
+    {
+      path: "src/app/App.tsx",
+      content: `import { WorkflowQueue } from "../features/workflows/WorkflowQueue";
+
+export function App() {
+  return (
+    <main className="shell">
+      <section>
+        <p className="eyebrow">Internal Tool</p>
+        <h1>{{projectTitle}}</h1>
+        <p>Operate repeatable workflows with clear ownership and agent-readable task boundaries.</p>
+      </section>
+      <WorkflowQueue />
+    </main>
+  );
+}
+`
+    },
+    {
+      path: "src/app/styles.css",
+      content: `:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --ink: #101827;
+  --muted: #5c6678;
+  --line: #d9e0ea;
+  --accent: #0f766e;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.shell {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0;
+  display: grid;
+  gap: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: clamp(34px, 6vw, 64px);
+  line-height: 1;
+}
+
+.queue {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 20px;
+}
+`
+    },
+    {
+      path: "src/features/workflows/WorkflowQueue.tsx",
+      content: `const tasks = [
+  { id: "ops-review", title: "Review blocked workflows", owner: "operations" },
+  { id: "customer-sync", title: "Sync customer updates", owner: "support" }
+];
+
+export function WorkflowQueue() {
+  return (
+    <section className="queue" aria-label="Workflow queue">
+      <h2>Workflow queue</h2>
+      {tasks.map((task) => (
+        <article key={task.id}>
+          <strong>{task.title}</strong>
+          <p>Owner: {task.owner}</p>
+        </article>
+      ))}
+    </section>
+  );
+}
+`
+    },
+    {
+      path: "src/core/api-client.ts",
+      content: `export async function apiGet<T>(path: string): Promise<T> {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(\`Request failed: \${response.status}\`);
+  return response.json() as Promise<T>;
+}
+`
+    },
+    {
+      path: "src/features/reports/README.md",
+      content: `# Reports
+
+Owns operational reporting, exports, and dashboard metrics.
+`
+    },
+    {
+      path: "tsconfig.json",
+      content: json({
+        compilerOptions: {
+          target: "ES2020",
+          useDefineForClassFields: true,
+          lib: ["DOM", "DOM.Iterable", "ES2020"],
+          allowJs: false,
+          skipLibCheck: true,
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+          strict: true,
+          forceConsistentCasingInFileNames: true,
+          module: "ESNext",
+          moduleResolution: "Node",
+          resolveJsonModule: true,
+          isolatedModules: true,
+          noEmit: true,
+          jsx: "react-jsx"
+        },
+        include: ["src"],
+        references: []
+      })
+    },
+    {
+      path: "vite.config.ts",
+      content: `import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()]
+});
+`
+    }
+  ];
+}
+
+// src/templates/next-templates.ts
+function aiSaasFiles(profile) {
+  return [
+    ...nextPackageFiles(profile, "AI SaaS application generated by AgentKick."),
+    ...nextBaseFiles(
+      "Build the AI workflow layer first.",
+      "Design workflows that agents can understand and users can trust."
+    ),
+    {
+      path: "app/api/workflows/route.ts",
+      content: `import { NextResponse } from "next/server";
+import { listWorkflowRuns } from "@/src/features/workflows/server/workflow-service";
+
+export async function GET() {
+  return NextResponse.json({ workflows: listWorkflowRuns() });
+}
+`
+    },
+    {
+      path: "src/features/workflows/server/workflow-service.ts",
+      content: `export type WorkflowRun = {
+  id: string;
+  name: string;
+  status: "queued" | "running" | "complete";
+};
+
+const runs: WorkflowRun[] = [
+  { id: "demo-onboarding", name: "Onboarding analysis", status: "queued" }
+];
+
+export function listWorkflowRuns() {
+  return runs;
+}
+`
+    },
+    {
+      path: "src/features/workflows/README.md",
+      content: `# Workflows
+
+Owns AI workflow runs, execution state, and task handoff boundaries.
+
+Agents should keep prompt, execution, and result handling separate in this feature.
+`
+    },
+    {
+      path: "src/features/memory/README.md",
+      content: `# Memory
+
+Owns durable project and customer-facing memory. Do not store secrets here.
+
+Use small typed records and summarize long-running state before it enters prompts.
+`
+    },
+    {
+      path: "src/core/env.ts",
+      content: `export function requiredEnv(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(\`Missing required environment variable: \${name}\`);
+  return value;
+}
+`
+    }
+  ];
+}
+function saasFiles(profile) {
+  return [
+    ...nextPackageFiles(profile, "SaaS application generated by AgentKick."),
+    ...nextBaseFiles(
+      "Build the smallest useful customer workspace.",
+      "Keep account, billing, and workspace boundaries explicit."
+    ),
+    {
+      path: "src/features/accounts/README.md",
+      content: `# Accounts
+
+Owns user, organization, and membership behavior.
+
+Do not mix billing or product workflow behavior into this module.
+`
+    },
+    {
+      path: "src/features/billing/README.md",
+      content: `# Billing
+
+Owns plans, subscriptions, invoices, and payment-provider boundaries.
+
+Agents must call out migration impact before changing billing contracts.
+`
+    },
+    {
+      path: "src/features/workspaces/README.md",
+      content: `# Workspaces
+
+Owns the customer workspace shell and scoped project data.
+`
+    },
+    {
+      path: "app/api/health/route.ts",
+      content: `import { NextResponse } from "next/server";
+
+export async function GET() {
+  return NextResponse.json({ ok: true, service: "{{projectName}}" });
+}
+`
+    }
+  ];
+}
+function marketplaceFiles(profile) {
+  return [
+    ...nextPackageFiles(profile, "Marketplace application generated by AgentKick."),
+    ...nextBaseFiles(
+      "Build the marketplace trust loop first.",
+      "Keep vendor, listing, order, and admin modules isolated."
+    ),
+    {
+      path: "src/features/vendors/README.md",
+      content: `# Vendors
+
+Owns seller onboarding, profiles, approval state, and vendor operations.
+`
+    },
+    {
+      path: "src/features/listings/README.md",
+      content: `# Listings
+
+Owns catalog items, availability, pricing display, and listing quality checks.
+`
+    },
+    {
+      path: "src/features/orders/README.md",
+      content: `# Orders
+
+Owns checkout handoff, order lifecycle, fulfillment state, and customer updates.
+`
+    },
+    {
+      path: "src/features/admin/README.md",
+      content: `# Admin
+
+Owns marketplace moderation, trust operations, and support workflows.
+`
+    },
+    {
+      path: "app/api/marketplace/route.ts",
+      content: `import { NextResponse } from "next/server";
+
+export async function GET() {
+  return NextResponse.json({
+    vendors: [],
+    listings: [],
+    orders: []
+  });
+}
+`
+    }
+  ];
+}
 function nextPackageFiles(profile, description) {
   return [
     {
@@ -3790,113 +3734,136 @@ Reusable utilities and presentational pieces that do not own product behavior.
     }
   ];
 }
-function desktopStyles(stackName) {
-  return `:root {
-  color-scheme: light;
-  --bg: #f5f7fb;
-  --ink: #101827;
-  --muted: #5c6678;
-  --line: #d8e0eb;
-  --accent: #1f5eff;
-}
 
-* {
-  box-sizing: border-box;
-}
+// src/templates/shared-template-files.ts
+function sharedMemoryFiles(profile, template) {
+  return [
+    {
+      path: "CURRENT_TASK.md",
+      content: `# Current Task
 
-body {
-  margin: 0;
-  min-width: 760px;
-  min-height: 520px;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--bg);
-  color: var(--ink);
-}
+## Status
 
-.shell {
-  min-height: 100vh;
-  width: min(1040px, calc(100% - 48px));
-  margin: 0 auto;
-  display: grid;
-  align-content: center;
-  gap: 24px;
-}
+No active task.
 
-.hero {
-  display: grid;
-  gap: 12px;
-}
+## Active Scope
 
-.eyebrow {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
+- Template: {{templateLabel}}
+- Project: {{projectTitle}}
+- Primary stack: ${profile.stack.join(", ")}
 
-h1 {
-  max-width: 760px;
-  margin: 0;
-  font-size: 56px;
-  line-height: 1;
-}
+## Next Execution
 
-p {
-  max-width: 660px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 18px;
-  line-height: 1.6;
-}
+- Run \`${profile.testCommand}\` before handing work back.
+- Keep task notes short and move completed work into \`TASK_HISTORY.md\`.
+- Start each new agent session by reading \`AGENTS.md\`, \`CURRENT_TASK.md\`, and \`ARCHITECTURE.md\`.
+`
+    },
+    {
+      path: "ARCHITECTURE.md",
+      content: `# Architecture
 
-.panel {
-  width: min(480px, 100%);
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: white;
-  padding: 18px;
-}
+## System Shape
 
-.panel span {
-  color: var(--muted);
-  font-size: 13px;
-}
+{{projectTitle}} is a {{templateLabel}} project generated for AI-assisted development.
 
-.panel strong {
-  font-size: 18px;
-}
+## Boundaries
 
-button {
-  width: fit-content;
-  border: 0;
-  border-radius: 6px;
-  padding: 10px 14px;
-  background: var(--accent);
-  color: white;
-  font-weight: 700;
-  cursor: pointer;
-}
+- \`src/core\`: shared primitives, configuration, and framework-neutral helpers.
+- \`src/features\`: feature modules with local UI, workflow, and service code.
+- \`src/app\` or \`app\`: route and composition layer.
+- \`src/shared\`: small reusable utilities that are stable across features.
+- \`docs\`: product, workflow, and launch notes.
 
-@media (max-width: 820px) {
-  body {
-    min-width: 0;
-  }
+## Agent Rules
 
-  .shell {
-    width: min(100% - 32px, 1040px);
-  }
+- Edit inside one feature boundary when possible.
+- Move reusable behavior to \`src/core\` only after two real call sites exist.
+- Keep route handlers thin and push business behavior into feature modules.
+- Do not add cross-feature imports without documenting the dependency here.
+`
+    },
+    {
+      path: "WORKFLOW_RULES.md",
+      content: `# Workflow Rules
 
-  h1 {
-    font-size: 40px;
-  }
-}
+## Context Loading
 
-/* ${stackName} template: keep native bridge code outside the UI surface. */
-`;
+1. Read \`AGENTS.md\`.
+2. Read \`CURRENT_TASK.md\`.
+3. Read the feature README for the scoped module.
+4. Open only the files required for the task.
+
+## Update Rules
+
+- Update \`CURRENT_TASK.md\` when task scope changes.
+- Add durable decisions to \`DECISIONS.md\`.
+- Add completed task notes to \`TASK_HISTORY.md\`.
+- Keep generated memory concise. Prefer bullets over long prose.
+
+## Execution Discipline
+
+- One task, one feature scope, one verification command.
+- Avoid broad rewrites during focused fixes.
+- Do not mix product, auth, billing, and database changes in the same task unless explicitly requested.
+`
+    },
+    {
+      path: "FEATURE_SUMMARIES.md",
+      content: `# Feature Summaries
+
+Keep one short section per feature. Each section should explain ownership, important files, and current risks.
+
+## Template Features
+
+- Project type: {{templateLabel}}
+- Source boundaries are documented in \`ARCHITECTURE.md\`.
+- Add feature entries when implementation begins.
+`
+    },
+    {
+      path: "DECISIONS.md",
+      content: `# Decisions
+
+Record durable technical and product decisions here. Keep entries short enough for agents to scan.
+
+## Format
+
+- Date:
+- Decision:
+- Context:
+- Consequences:
+`
+    },
+    {
+      path: "TASK_HISTORY.md",
+      content: `# Task History
+
+Record completed work here after it is verified.
+
+## Entries
+
+- No completed tasks yet.
+`
+    },
+    {
+      path: "docs/PROJECT_MAP.md",
+      content: `# Project Map
+
+## Template
+
+- Type: {{templateLabel}}
+- Description: ${template.description}
+
+## First Files To Read
+
+- \`AGENTS.md\`
+- \`CURRENT_TASK.md\`
+- \`ARCHITECTURE.md\`
+- \`WORKFLOW_RULES.md\`
+`
+    }
+  ];
 }
 function gitignoreFor(profile) {
   const common = [".DS_Store", ".env", ".env.local", "dist/", "build/", "*.agentkick-backup"];
@@ -3923,6 +3890,112 @@ function titleize2(value) {
   return value.split(/[-_\s]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
+// src/templates/project-templates.ts
+var TEMPLATE_REGISTRY = {
+  "ai-saas": {
+    id: "ai-saas",
+    label: "AI SaaS",
+    description: "Next.js product shell with AI workflow boundaries.",
+    defaultPacks: ["core", "github"],
+    files: aiSaasFiles
+  },
+  "chrome-extension": {
+    id: "chrome-extension",
+    label: "Chrome Extension",
+    description: "Manifest V3 extension with popup, content, and background boundaries.",
+    defaultPacks: ["core", "chrome-extension", "github"],
+    files: chromeExtensionFiles
+  },
+  marketplace: {
+    id: "marketplace",
+    label: "Marketplace",
+    description: "Buyer/seller marketplace starter with scoped domains.",
+    defaultPacks: ["core", "github"],
+    files: marketplaceFiles
+  },
+  saas: {
+    id: "saas",
+    label: "SaaS",
+    description: "Clean SaaS app shell with product, billing, and dashboard zones.",
+    defaultPacks: ["core", "github"],
+    files: saasFiles
+  },
+  "internal-tool": {
+    id: "internal-tool",
+    label: "Internal Tool",
+    description: "Operational dashboard template with workflow-first boundaries.",
+    defaultPacks: ["core", "github"],
+    files: internalToolFiles
+  },
+  "electron-app": {
+    id: "electron-app",
+    label: "Electron App",
+    description: "Electron + React + Vite desktop app with secure process boundaries.",
+    defaultPacks: ["core", "electron", "github"],
+    files: electronAppFiles
+  },
+  "tauri-app": {
+    id: "tauri-app",
+    label: "Tauri App",
+    description: "Tauri + React + Vite native desktop app with explicit command bridge.",
+    defaultPacks: ["core", "tauri", "github"],
+    files: tauriAppFiles
+  }
+};
+function getTemplateDefinition(template) {
+  return TEMPLATE_REGISTRY[template];
+}
+function templateChoices() {
+  return Object.values(TEMPLATE_REGISTRY).map((template) => ({
+    name: template.label,
+    value: template.id,
+    description: template.description
+  }));
+}
+async function writeTemplateProject(projectDir, profile) {
+  const definition = getTemplateDefinition(profile.template);
+  const variables = variablesFor(profile, definition);
+  const templateFiles = [
+    ...definition.files(profile),
+    ...sharedMemoryFiles(profile, definition),
+    { path: "README.md", content: readmeFor(profile) },
+    { path: ".gitignore", content: gitignoreFor(profile) },
+    {
+      path: ".agentkick.json",
+      content: JSON.stringify(
+        {
+          project: profile.name,
+          template: profile.template,
+          stack: profile.stack,
+          packageManager: profile.packageManager,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+          workflowPacks: definition.defaultPacks
+        },
+        null,
+        2
+      )
+    }
+  ];
+  for (const file2 of templateFiles) {
+    await writeFile(projectDir, file2.path, render(file2.content, variables));
+  }
+  return {
+    files: templateFiles.map((file2) => file2.path).sort(),
+    packs: definition.defaultPacks
+  };
+}
+function postInstallStepsFor(template) {
+  if (template === "tauri-app") {
+    return [
+      "Install Rust and Tauri system prerequisites before running npm run dev.",
+      "Run npm install inside the generated project.",
+      "Run npm run typecheck before starting Tauri.",
+      "Run npm run dev when your Rust/Tauri toolchain is ready."
+    ];
+  }
+  return ["Run npm install inside the generated project.", "Run npm run dev to start the app."];
+}
+
 // src/commands/new.ts
 var ProjectNameSchema = z.string().min(1, "project name is required").regex(/^[a-z0-9._-]+$/, "project name may only contain lowercase letters, numbers, dots, underscores, and dashes").refine((value) => value !== "." && value !== "..", "project name cannot be . or ..");
 function registerNewCommand(program, context) {
@@ -3943,8 +4016,8 @@ Examples:
     const resolvedName = sanitizeProjectName(projectName ?? await input({ message: "Project name:" }));
     const validation = ProjectNameSchema.safeParse(resolvedName);
     if (!validation.success) throw new Error(validation.error.issues[0]?.message ?? "invalid project name");
-    const projectDir = path6.resolve(context.cwd, resolvedName);
-    if (fs5.existsSync(projectDir)) throw new Error(`target folder already exists: ${projectDir}`);
+    const projectDir = path10.resolve(context.cwd, resolvedName);
+    if (fs9.existsSync(projectDir)) throw new Error(`target folder already exists: ${projectDir}`);
     const defaultPacks = defaultPacksForTemplate(resolvedTemplate);
     const profile = {
       ...buildProfile(resolvedTemplate, resolvedName),
@@ -3990,7 +4063,7 @@ function normalizeTemplate(value) {
 }
 
 // src/commands/split-task.ts
-import path7 from "path";
+import path11 from "path";
 var TASK_AREAS = [
   {
     id: "auth",
@@ -4086,7 +4159,7 @@ function splitTask(cwd, profile, task, fileHints) {
       "No semantic code ownership claims.",
       "No background jobs.",
       "No file writes by default.",
-      `Repository: ${path7.basename(cwd)}`
+      `Repository: ${path11.basename(cwd)}`
     ]
   };
 }
