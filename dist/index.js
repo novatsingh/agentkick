@@ -526,9 +526,10 @@ function hint(message) {
 // src/workflow/packs.ts
 import path4 from "path";
 
-// src/workflow/memory.ts
+// src/workflow/context.ts
 import fs3 from "fs";
 import path3 from "path";
+import { execSync } from "child_process";
 
 // src/utils/git.ts
 import { execa } from "execa";
@@ -541,7 +542,7 @@ async function gitBranch(cwd) {
   }
 }
 
-// src/workflow/memory.ts
+// src/workflow/context.ts
 var MEMORY_FILES = [
   "AGENTS.md",
   "CURRENT_TASK.md",
@@ -586,6 +587,510 @@ var IGNORED_DIRS = /* @__PURE__ */ new Set([
   "target",
   "__pycache__"
 ]);
+function buildFocusContext(cwd, input2 = "current task") {
+  const profile = detectProject(cwd);
+  const focus = normalizeFocusInput(input2);
+  const explicitFiles = normalizeFileHints(focus.files ?? []);
+  const scopedFiles = explicitFiles.length > 0 ? findExplicitScopedFiles(cwd, explicitFiles) : findScopedFiles(cwd, focus.scope);
+  const uncertainty = uncertaintyFor(focus, scopedFiles, explicitFiles);
+  updateCurrentTask(cwd, profile, focus, scopedFiles, uncertainty);
+  writeWorkflowState(cwd, profile, focus, scopedFiles);
+  return {
+    profile,
+    task: focus.task,
+    feature: focus.feature,
+    scope: focus.scope,
+    explicitFiles,
+    loadFirst: existing(cwd, ALWAYS_LOAD),
+    avoidPaths: avoidPathsFor(cwd),
+    scopedFiles,
+    memoryFiles: existing(cwd, MEMORY_FILES),
+    memory: memoryDigest(cwd),
+    verificationCommand: verificationCommand(profile),
+    buildCommand: buildCommand(profile),
+    boundaries: boundariesFor(focus.scope, scopedFiles),
+    uncertainty,
+    nextCommand: "agentkick summarize --task " + quoteShell(focus.task)
+  };
+}
+async function buildWorkflowSummary(cwd, input2) {
+  const profile = detectProject(cwd);
+  const branch = await gitBranch(cwd);
+  const summaryInput = normalizeSummaryInput(input2);
+  const state = readWorkflowState(cwd);
+  const stateScope = state?.activeScope && state.activeScope !== "current task" ? state.activeScope : void 0;
+  const selectedScope = summaryInput.scope ?? stateScope ?? summaryInput.task ?? readActiveScope(cwd) ?? "current task";
+  const task = summaryInput.task ?? state?.task ?? selectedScope;
+  const scopedFiles = findScopedFiles(cwd, selectedScope).slice(0, 12);
+  const memory = memoryDigest(cwd);
+  const status2 = summaryInput.status ?? (summaryInput.handoff ? "handoff" : "complete");
+  const changedFiles = knownChangedFiles(cwd, state, scopedFiles);
+  const result = status2 === "handoff" ? "Prepared a compact handoff for the next coding-agent session." : "Compressed the current workflow state into durable memory.";
+  const verificationState = verificationCommand(profile);
+  const blocker = status2 === "blocked" ? "Blocked; add blocker detail before handoff." : "none captured";
+  const nextStep = status2 === "handoff" ? `Paste the handoff into a fresh Codex chat and continue ${task}.` : "Run agentkick doctor.";
+  const handoffText = handoffTextFor(profile, task, selectedScope, changedFiles, verificationState, blocker, nextStep);
+  const appendedTo = appendTaskSummary(cwd, {
+    task,
+    scope: selectedScope,
+    status: status2,
+    result,
+    changedFiles,
+    verificationState,
+    blocker,
+    nextStep
+  });
+  return {
+    project: profile.name,
+    stack: profile.primaryStack ?? profile.template,
+    capabilities: profile.capabilities ?? [],
+    packageManager: profile.packageManager,
+    testCommand: profile.testCommand,
+    buildCommand: profile.buildCommand,
+    branch,
+    task,
+    status: status2,
+    result,
+    scope: selectedScope,
+    scopedFiles,
+    changedFiles,
+    verificationState,
+    blocker,
+    nextStep,
+    appendedTo,
+    handoff: summaryInput.handoff,
+    handoffText,
+    memory,
+    freshChatSummary: freshChatSummary(profile, selectedScope, scopedFiles, memory)
+  };
+}
+function updateCurrentTask(cwd, profile, focus, files, uncertainty) {
+  writeFile(
+    cwd,
+    "CURRENT_TASK.md",
+    `# Current Task
+
+## Status
+
+Prepared focus context.
+
+## Active Scope
+
+- Task: ${focus.task}
+- Task scope: ${focus.scope}
+${focus.feature ? `- Feature: ${focus.feature}
+` : ""}- Scope source: ${focus.files?.length ? "explicit files" : "task or feature text"}
+- Project: ${profile.name}
+- Stack: ${profile.stack.join(", ") || "generic"}
+- Verification: ${profile.testCommand}
+
+## Scoped Files
+
+${files.length > 0 ? files.map((file2) => `- ${file2.path}: ${file2.reason}`).join("\n") : "- No scoped files detected yet."}
+
+## Uncertainty
+
+${uncertainty.map((item) => `- ${item}`).join("\n")}
+
+## Execution Boundary
+
+- Stay inside the scoped files unless a direct dependency requires expansion.
+- Update this file if the task scope changes.
+- Move durable decisions to \`DECISIONS.md\`.
+- Move completed work to \`TASK_HISTORY.md\`.
+`
+  );
+}
+function writeWorkflowState(cwd, profile, focus, files) {
+  const state = {
+    schemaVersion: 1,
+    project: profile.name,
+    activeScope: focus.scope,
+    task: focus.task,
+    feature: focus.feature,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    stack: profile.stack,
+    scopedFiles: files.map((file2) => file2.path)
+  };
+  writeFile(cwd, ".agentkick/workflow-state.json", json(state));
+}
+function normalizeFocusInput(input2) {
+  if (typeof input2 === "string") {
+    return { scope: input2 || "current task", task: input2 || "current task", files: [] };
+  }
+  const files = normalizeFileHints(input2.files ?? []);
+  const fallback = files.length > 0 ? "explicit file scope" : "current task";
+  const task = input2.task?.trim() || input2.scope?.trim() || input2.feature?.trim() || fallback;
+  const scope = input2.feature?.trim() || input2.scope?.trim() || task;
+  return {
+    scope,
+    task,
+    feature: input2.feature?.trim() || void 0,
+    files
+  };
+}
+function normalizeSummaryInput(input2) {
+  if (!input2) return { handoff: false };
+  if (typeof input2 === "string") return { scope: input2, task: void 0, handoff: false };
+  return {
+    scope: input2.scope?.trim() || void 0,
+    task: input2.task?.trim() || void 0,
+    handoff: Boolean(input2.handoff || input2.status === "handoff"),
+    status: normalizeSummaryStatus(input2.status)
+  };
+}
+function normalizeSummaryStatus(statusValue) {
+  if (statusValue === "complete" || statusValue === "blocked" || statusValue === "handoff") return statusValue;
+  return void 0;
+}
+function findExplicitScopedFiles(cwd, files) {
+  const allFiles = scanFiles(cwd);
+  const byPath = new Map(allFiles.map((file2) => [file2.path, file2]));
+  const selected = [];
+  for (const item of files) {
+    const normalized = slash(item.replace(/^\.\/+/, ""));
+    const fullPath = path3.join(cwd, normalized);
+    if (directoryExists2(fullPath)) {
+      selected.push(
+        ...allFiles.filter((file2) => file2.path === normalized || file2.path.startsWith(`${normalized.replace(/\/$/, "")}/`)).slice(0, 24).map((file2) => ({ ...file2, reason: "inside explicit folder scope" }))
+      );
+      continue;
+    }
+    const existingFile = byPath.get(normalized);
+    if (existingFile) {
+      selected.push({ ...existingFile, reason: "explicit file scope" });
+      continue;
+    }
+    selected.push({ path: normalized, lines: 0, exists: false, reason: "explicit file hint, but not found" });
+  }
+  return dedupeScopedFiles(selected).slice(0, 24);
+}
+function findScopedFiles(cwd, scope) {
+  const terms = tokenize(scope);
+  const allFiles = scanFiles(cwd);
+  const scored = allFiles.map((file2) => scoreFile(cwd, file2, terms)).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path)).slice(0, 16);
+  if (scored.length === 0 && scope !== "current task") {
+    return allFiles.filter((file2) => file2.path.includes(scope)).slice(0, 12).map((file2) => ({ ...file2, reason: "path contains scope" }));
+  }
+  return scored.map(({ file: file2, reasons }) => ({ ...file2, reason: reasons.slice(0, 2).join(", ") }));
+}
+function scanFiles(cwd) {
+  const results = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs3.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path3.join(dir, entry.name);
+      const relativePath = slash(path3.relative(cwd, fullPath));
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const extension = path3.extname(entry.name).toLowerCase();
+      if (isAgentMemoryPath(relativePath)) continue;
+      if (!SOURCE_EXTENSIONS.has(extension)) continue;
+      const stats = fs3.statSync(fullPath);
+      if (stats.size > 4e5) continue;
+      results.push({ path: relativePath, lines: lineCount(readFileSafe(fullPath)), exists: true });
+    }
+  };
+  walk(cwd);
+  return results;
+}
+function scoreFile(cwd, file2, terms) {
+  const lowerPath = file2.path.toLowerCase();
+  const reasons = [];
+  let score2 = 0;
+  for (const term of terms) {
+    if (lowerPath.includes(term)) {
+      score2 += lowerPath.split("/").some((part) => part.includes(term)) ? 8 : 4;
+      reasons.push(`path matches "${term}"`);
+    }
+  }
+  if (score2 === 0 && terms.length > 0 && file2.lines < 900) {
+    const content = readFileSafe(path3.join(cwd, file2.path)).toLowerCase();
+    for (const term of terms) {
+      if (content.includes(term)) {
+        score2 += 2;
+        reasons.push(`content mentions "${term}"`);
+        break;
+      }
+    }
+  }
+  if (score2 > 0 && (lowerPath.includes("readme") || lowerPath.endsWith("route.ts") || lowerPath.endsWith("api.ts"))) {
+    score2 += 1;
+  }
+  if (score2 > 0 && lowerPath.startsWith("src/")) score2 += 3;
+  if (score2 > 0 && lowerPath.startsWith("docs/")) score2 -= 8;
+  if (score2 > 0 && (lowerPath === "readme.md" || lowerPath === "changelog.md" || lowerPath === "claude.md")) score2 -= 3;
+  return { file: file2, score: score2, reasons: reasons.length > 0 ? reasons : ["near scope"] };
+}
+function memoryDigest(cwd) {
+  return MEMORY_FILES.filter((file2) => fs3.existsSync(path3.join(cwd, file2))).map((file2) => {
+    const content = readFileSafe(path3.join(cwd, file2));
+    return `${file2}: ${compressText(content, 180)}`;
+  });
+}
+function boundariesFor(scope, files) {
+  const roots = [...new Set(files.map((file2) => file2.path.split("/").slice(0, 3).join("/")))].slice(0, 5);
+  return [
+    `Primary task scope is "${scope}".`,
+    roots.length > 0 ? `Prefer these boundaries: ${roots.join(", ")}.` : "No source boundary was detected yet.",
+    "Never paste full source files into the agent chat.",
+    "Do not edit generated, build, dependency, or unrelated files.",
+    "Run the documented test/build command after changes when possible."
+  ];
+}
+function freshChatSummary(profile, scope, files, memory) {
+  return [
+    `${profile.name} is a ${profile.stack.join(", ") || "generic"} project prepared with AgentKick.`,
+    `Current scope: ${scope}.`,
+    files.length > 0 ? `Relevant files: ${files.map((file2) => file2.path).join(", ")}.` : "Relevant files are not identified yet.",
+    `Verification: ${profile.testCommand}; build: ${profile.buildCommand}.`,
+    `Memory: ${memory.map((item) => item.replace(/\s+/g, " ")).slice(0, 4).join(" ")}`
+  ].join("\n");
+}
+function handoffTextFor(profile, task, scope, changedFiles, verificationState, blocker, nextStep) {
+  return [
+    `Task: ${task}`,
+    `Repo: ${profile.name} (${profile.stack.join(", ") || "generic"})`,
+    `Scope: ${scope}`,
+    `Status: handoff`,
+    `Changed files: ${changedFiles.length > 0 ? changedFiles.join(", ") : "not known"}`,
+    `Verification: ${verificationState}`,
+    `Blocker: ${blocker}`,
+    `Next: ${nextStep}`
+  ].join("\n");
+}
+function appendTaskSummary(cwd, entry) {
+  const file2 = "TASK_HISTORY.md";
+  const existingContent = readFileSafe(path3.join(cwd, file2)) || "# Task History\n\n## Entries\n";
+  const date = (/* @__PURE__ */ new Date()).toISOString();
+  const block = [
+    "",
+    `### ${date} - ${entry.task}`,
+    "",
+    `- Status: ${entry.status}`,
+    `- Result: ${entry.result}`,
+    `- Scope: ${entry.scope}`,
+    `- Changed files: ${entry.changedFiles.length > 0 ? entry.changedFiles.join(", ") : "not known"}`,
+    `- Verification: ${entry.verificationState}`,
+    `- Blocker: ${entry.blocker}`,
+    `- Next step: ${entry.nextStep}`,
+    ""
+  ].join("\n");
+  writeFile(cwd, file2, `${existingContent.trimEnd()}
+${block}`);
+  return file2;
+}
+function knownChangedFiles(cwd, state, scopedFiles) {
+  const fromState = state?.scopedFiles ?? [];
+  if (fromState.length > 0) return fromState.slice(0, 20);
+  const fromScope = scopedFiles.map((file2) => file2.path).slice(0, 20);
+  if (fromScope.length > 0) return fromScope;
+  try {
+    const output = execSync("git diff --name-only", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return output.split(/\r?\n/).map((file2) => slash(file2.trim())).filter(Boolean).slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+function uncertaintyFor(focus, files, explicitFiles) {
+  const warnings = [];
+  if (explicitFiles.length > 0) warnings.push("Explicit --files scope is being used as the source of truth.");
+  if (files.length === 0) warnings.push("No task files were found; start by confirming entry points before editing.");
+  if (files.length > 12) warnings.push("Scope is broad; split the task or pass fewer explicit files.");
+  if (files.some((file2) => !file2.exists)) warnings.push("Some explicit file hints were not found on disk.");
+  if (focus.task.trim().split(/\s+/).length < 3) warnings.push("Task text is short; file selection is best-effort.");
+  return warnings.length > 0 ? warnings : ["No major uncertainty detected from the provided scope."];
+}
+function avoidPathsFor(cwd) {
+  const preferred = [
+    "node_modules/",
+    "dist/",
+    "build/",
+    "coverage/",
+    ".next/",
+    ".turbo/",
+    ".agentkick/",
+    "vendor/",
+    "target/"
+  ];
+  const existingPaths = preferred.filter((item) => {
+    const normalized = item.replace(/\/$/, "");
+    return directoryExists2(path3.join(cwd, normalized)) || ["node_modules/", "dist/", "build/", ".agentkick/"].includes(item);
+  });
+  return [...new Set(existingPaths)];
+}
+function verificationCommand(profile) {
+  if (profile.testCommand && !profile.testCommand.startsWith("document ")) return profile.testCommand;
+  if (profile.buildCommand && !profile.buildCommand.startsWith("document ")) return profile.buildCommand;
+  return "document the narrowest useful verification command before editing";
+}
+function buildCommand(profile) {
+  if (profile.buildCommand && !profile.buildCommand.startsWith("document ")) return profile.buildCommand;
+  return "not detected";
+}
+function readWorkflowState(cwd) {
+  return readJsonSafe(path3.join(cwd, ".agentkick", "workflow-state.json"));
+}
+function readActiveScope(cwd) {
+  const state = readWorkflowState(cwd);
+  if (state?.activeScope && state.activeScope !== "none") return state.activeScope;
+  const currentTask = readFileSafe(path3.join(cwd, "CURRENT_TASK.md"));
+  const match = currentTask.match(/Task scope:\s*(.+)/i);
+  return match?.[1]?.trim() || null;
+}
+function existing(cwd, files) {
+  return files.filter((file2) => fs3.existsSync(path3.join(cwd, file2)));
+}
+function tokenize(value) {
+  const terms = value.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length >= 2 && !["the", "and", "for", "with", "task", "current"].includes(part));
+  const aliases = {
+    cli: ["command", "commands", "commander", "program"],
+    auth: ["login", "session", "user", "account"],
+    api: ["route", "routes", "server", "service"],
+    workflow: ["workflows", "state", "task"],
+    workflows: ["workflow", "state", "task"]
+  };
+  return [...new Set(terms.flatMap((term) => [term, ...aliases[term] ?? []]))];
+}
+function normalizeFileHints(files) {
+  return [
+    ...new Set(
+      files.map((file2) => slash(file2.trim())).filter(Boolean).map((file2) => file2.replace(/^\.\/+/, ""))
+    )
+  ];
+}
+function dedupeScopedFiles(files) {
+  const seen = /* @__PURE__ */ new Set();
+  return files.filter((file2) => {
+    if (seen.has(file2.path)) return false;
+    seen.add(file2.path);
+    return true;
+  });
+}
+function readFileSafe(file2) {
+  try {
+    return fs3.readFileSync(file2, "utf8");
+  } catch {
+    return "";
+  }
+}
+function lineCount(content) {
+  if (!content) return 0;
+  return content.split(/\r?\n/).length;
+}
+function compressText(content, maxLength) {
+  const compact = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" ").replace(/\s+/g, " ");
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 3)}...`;
+}
+function isAgentMemoryPath(relativePath) {
+  return MEMORY_FILES.includes(relativePath) || relativePath === ".agentkick.json" || relativePath.startsWith(".github/") || relativePath.startsWith(".claude/") || relativePath.startsWith(".codex/") || relativePath.startsWith(".agents/") || relativePath.startsWith(".cursor/");
+}
+function directoryExists2(directory) {
+  try {
+    return fs3.statSync(directory).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function quoteShell(value) {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+function slash(value) {
+  return value.replace(/\\/g, "/");
+}
+
+// src/workflow/context-render.ts
+function renderFocus(context) {
+  const lines = [
+    header("AgentKick focus", "Paste-ready task brief for a coding agent."),
+    "",
+    section("Task:"),
+    context.task,
+    "",
+    context.feature ? keyValue("Feature", context.feature) : "",
+    keyValue("Scope", context.scope),
+    keyValue("Detected stack", context.profile.primaryStack ?? context.profile.template),
+    context.profile.capabilities?.length ? keyValue("Detected capabilities", context.profile.capabilities.join(", ")) : "",
+    "",
+    section("Load first:"),
+    ...context.loadFirst.map((file2) => bullet(pathLabel(file2))),
+    "",
+    section("Task files:"),
+    ...context.scopedFiles.length > 0 ? context.scopedFiles.map(
+      (file2) => bullet(`${pathLabel(file2.path)} (${file2.exists ? `${file2.lines} lines` : "not found"}; ${file2.reason})`)
+    ) : [bullet("No scoped source files found. Start from the memory files above.")],
+    "",
+    section("Avoid paths:"),
+    ...context.avoidPaths.map((item) => bullet(pathLabel(item))),
+    "",
+    section("Known memory files:"),
+    ...context.memoryFiles.map((item) => bullet(pathLabel(item))),
+    "",
+    keyValue("Verification", context.verificationCommand),
+    keyValue("Build", context.buildCommand),
+    "",
+    section("Execution boundaries:"),
+    ...context.boundaries.map((boundary) => bullet(boundary)),
+    "",
+    section("Uncertainty:"),
+    ...context.uncertainty.map((item) => bullet(item)),
+    "",
+    section("Compressed memory:"),
+    ...context.memory.map((item) => bullet(item)),
+    "",
+    section("Agent-ready prompt:"),
+    [
+      `Task: ${context.task}`,
+      `Read first: ${context.loadFirst.join(", ") || "AGENTS.md, WORKFLOW_RULES.md"}.`,
+      `Work in task files only: ${context.scopedFiles.map((file2) => file2.path).join(", ") || "scope not confirmed"}.`,
+      `Avoid: ${context.avoidPaths.join(", ")}.`,
+      `Verify with: ${context.verificationCommand}.`,
+      "Do not copy full source files into chat. Expand scope only when the code path proves it is required."
+    ].join("\n"),
+    "",
+    keyValue("Suggested next command", command(context.nextCommand))
+  ];
+  return lines.filter((line) => line !== "").join("\n");
+}
+function renderSummary(summary) {
+  const lines = [
+    header("AgentKick summary", "Fresh-chat handoff for the current workflow state."),
+    "",
+    keyValue("Project", summary.project),
+    summary.branch ? keyValue("Git branch", summary.branch) : "",
+    keyValue("Task", summary.task),
+    keyValue("Status", summary.status),
+    keyValue("Scope", summary.scope),
+    keyValue("Stack", summary.stack),
+    summary.capabilities.length ? keyValue("Capabilities", summary.capabilities.join(", ")) : "",
+    keyValue("Package manager", summary.packageManager),
+    keyValue("Result", summary.result),
+    keyValue("Verification state", summary.verificationState),
+    keyValue("Blocker", summary.blocker),
+    keyValue("Next step", summary.nextStep),
+    keyValue("Appended to", summary.appendedTo),
+    "",
+    section("Changed files if known:"),
+    ...summary.changedFiles.length > 0 ? summary.changedFiles.map((file2) => bullet(pathLabel(file2))) : [bullet("None known from workflow state or git diff.")],
+    "",
+    section("Memory digest:"),
+    ...summary.memory.map((item) => bullet(item)),
+    "",
+    section(summary.handoff ? "Fresh-chat handoff:" : "Fresh-chat summary:"),
+    summary.handoff ? summary.handoffText : summary.freshChatSummary
+  ];
+  return lines.filter((line) => line !== "").join("\n");
+}
+
+// src/workflow/memory.ts
 function writeWorkflowMemoryFiles(cwd, profile) {
   writeFile(
     cwd,
@@ -700,260 +1205,6 @@ function writeInitialWorkflowState(cwd, profile) {
     scopedFiles: []
   };
   writeFile(cwd, ".agentkick/workflow-state.json", json(state));
-}
-function buildFocusContext(cwd, scope = "current task") {
-  const profile = detectProject(cwd);
-  const scopedFiles = findScopedFiles(cwd, scope);
-  updateCurrentTask(cwd, profile, scope, scopedFiles);
-  writeWorkflowState(cwd, profile, scope, scopedFiles);
-  return {
-    profile,
-    scope,
-    loadFirst: existing(cwd, ALWAYS_LOAD),
-    scopedFiles,
-    memory: memoryDigest(cwd),
-    boundaries: boundariesFor(scope, scopedFiles)
-  };
-}
-async function buildWorkflowSummary(cwd, scope) {
-  const profile = detectProject(cwd);
-  const branch = await gitBranch(cwd);
-  const selectedScope = scope ?? readActiveScope(cwd) ?? "current task";
-  const scopedFiles = findScopedFiles(cwd, selectedScope).slice(0, 12);
-  const memory = memoryDigest(cwd);
-  return {
-    project: profile.name,
-    stack: profile.primaryStack ?? profile.template,
-    capabilities: profile.capabilities ?? [],
-    packageManager: profile.packageManager,
-    testCommand: profile.testCommand,
-    buildCommand: profile.buildCommand,
-    branch,
-    scope: selectedScope,
-    scopedFiles,
-    memory,
-    freshChatSummary: freshChatSummary(profile, selectedScope, scopedFiles, memory)
-  };
-}
-function renderFocus(context) {
-  const lines = [
-    header("AgentKick focus", "Scoped context for one task."),
-    "",
-    keyValue("Scope", context.scope),
-    keyValue("Detected stack", context.profile.primaryStack ?? context.profile.template),
-    context.profile.capabilities?.length ? keyValue("Detected capabilities", context.profile.capabilities.join(", ")) : "",
-    "",
-    section("Load first:"),
-    ...context.loadFirst.map((file2) => bullet(pathLabel(file2))),
-    "",
-    section("Scoped files:"),
-    ...context.scopedFiles.length > 0 ? context.scopedFiles.map((file2) => bullet(`${pathLabel(file2.path)} (${file2.reason})`)) : [bullet("No scoped source files found. Start from the memory files above.")],
-    "",
-    section("Execution boundaries:"),
-    ...context.boundaries.map((boundary) => bullet(boundary)),
-    "",
-    section("Compressed memory:"),
-    ...context.memory.map((item) => bullet(item)),
-    "",
-    command("Working rule: load only the files above unless the code path proves another file is required.")
-  ];
-  return lines.filter((line) => line !== "").join("\n");
-}
-function renderSummary(summary) {
-  const lines = [
-    header("AgentKick summary", "Fresh-chat handoff for the current workflow state."),
-    "",
-    keyValue("Project", summary.project),
-    summary.branch ? keyValue("Git branch", summary.branch) : "",
-    keyValue("Scope", summary.scope),
-    keyValue("Stack", summary.stack),
-    summary.capabilities.length ? keyValue("Capabilities", summary.capabilities.join(", ")) : "",
-    keyValue("Package manager", summary.packageManager),
-    keyValue("Test", summary.testCommand),
-    keyValue("Build", summary.buildCommand),
-    "",
-    section("Scoped files:"),
-    ...summary.scopedFiles.length > 0 ? summary.scopedFiles.map((file2) => bullet(`${pathLabel(file2.path)} (${file2.lines} lines)`)) : [bullet("None detected from current scope.")],
-    "",
-    section("Memory digest:"),
-    ...summary.memory.map((item) => bullet(item)),
-    "",
-    section("Fresh-chat summary:"),
-    summary.freshChatSummary
-  ];
-  return lines.filter((line) => line !== "").join("\n");
-}
-function updateCurrentTask(cwd, profile, scope, files) {
-  writeFile(
-    cwd,
-    "CURRENT_TASK.md",
-    `# Current Task
-
-## Status
-
-Prepared focus context.
-
-## Active Scope
-
-- Task scope: ${scope}
-- Project: ${profile.name}
-- Stack: ${profile.stack.join(", ") || "generic"}
-- Verification: ${profile.testCommand}
-
-## Scoped Files
-
-${files.length > 0 ? files.map((file2) => `- ${file2.path}: ${file2.reason}`).join("\n") : "- No scoped files detected yet."}
-
-## Execution Boundary
-
-- Stay inside the scoped files unless a direct dependency requires expansion.
-- Update this file if the task scope changes.
-- Move durable decisions to \`DECISIONS.md\`.
-- Move completed work to \`TASK_HISTORY.md\`.
-`
-  );
-}
-function writeWorkflowState(cwd, profile, scope, files) {
-  const state = {
-    schemaVersion: 1,
-    project: profile.name,
-    activeScope: scope,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    stack: profile.stack,
-    scopedFiles: files.map((file2) => file2.path)
-  };
-  writeFile(cwd, ".agentkick/workflow-state.json", json(state));
-}
-function findScopedFiles(cwd, scope) {
-  const terms = tokenize(scope);
-  const allFiles = scanFiles(cwd);
-  const scored = allFiles.map((file2) => scoreFile(cwd, file2, terms)).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path)).slice(0, 16);
-  if (scored.length === 0 && scope !== "current task") {
-    return allFiles.filter((file2) => file2.path.includes(scope)).slice(0, 12).map((file2) => ({ ...file2, reason: "path contains scope" }));
-  }
-  return scored.map(({ file: file2, reasons }) => ({ ...file2, reason: reasons.slice(0, 2).join(", ") }));
-}
-function scanFiles(cwd) {
-  const results = [];
-  const walk = (dir) => {
-    let entries;
-    try {
-      entries = fs3.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path3.join(dir, entry.name);
-      const relativePath = slash(path3.relative(cwd, fullPath));
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const extension = path3.extname(entry.name).toLowerCase();
-      if (isAgentMemoryPath(relativePath)) continue;
-      if (!SOURCE_EXTENSIONS.has(extension)) continue;
-      const stats = fs3.statSync(fullPath);
-      if (stats.size > 4e5) continue;
-      results.push({ path: relativePath, lines: lineCount(readFileSafe(fullPath)) });
-    }
-  };
-  walk(cwd);
-  return results;
-}
-function scoreFile(cwd, file2, terms) {
-  const lowerPath = file2.path.toLowerCase();
-  const reasons = [];
-  let score2 = 0;
-  for (const term of terms) {
-    if (lowerPath.includes(term)) {
-      score2 += lowerPath.split("/").some((part) => part.includes(term)) ? 8 : 4;
-      reasons.push(`path matches "${term}"`);
-    }
-  }
-  if (score2 === 0 && terms.length > 0 && file2.lines < 900) {
-    const content = readFileSafe(path3.join(cwd, file2.path)).toLowerCase();
-    for (const term of terms) {
-      if (content.includes(term)) {
-        score2 += 2;
-        reasons.push(`content mentions "${term}"`);
-        break;
-      }
-    }
-  }
-  if (score2 > 0 && (lowerPath.includes("readme") || lowerPath.endsWith("route.ts") || lowerPath.endsWith("api.ts"))) {
-    score2 += 1;
-  }
-  if (score2 > 0 && lowerPath.startsWith("src/")) score2 += 3;
-  if (score2 > 0 && lowerPath.startsWith("docs/")) score2 -= 8;
-  if (score2 > 0 && (lowerPath === "readme.md" || lowerPath === "changelog.md" || lowerPath === "claude.md")) score2 -= 3;
-  return { file: file2, score: score2, reasons: reasons.length > 0 ? reasons : ["near scope"] };
-}
-function memoryDigest(cwd) {
-  return MEMORY_FILES.filter((file2) => fs3.existsSync(path3.join(cwd, file2))).map((file2) => {
-    const content = readFileSafe(path3.join(cwd, file2));
-    return `${file2}: ${compressText(content, 180)}`;
-  });
-}
-function boundariesFor(scope, files) {
-  const roots = [...new Set(files.map((file2) => file2.path.split("/").slice(0, 3).join("/")))].slice(0, 5);
-  return [
-    `Primary task scope is "${scope}".`,
-    roots.length > 0 ? `Prefer these boundaries: ${roots.join(", ")}.` : "No source boundary was detected yet.",
-    "Do not edit generated, build, dependency, or unrelated files.",
-    "Run the documented test/build command after changes when possible."
-  ];
-}
-function freshChatSummary(profile, scope, files, memory) {
-  return [
-    `${profile.name} is a ${profile.stack.join(", ") || "generic"} project prepared with AgentKick.`,
-    `Current scope: ${scope}.`,
-    files.length > 0 ? `Relevant files: ${files.map((file2) => file2.path).join(", ")}.` : "Relevant files are not identified yet.",
-    `Verification: ${profile.testCommand}; build: ${profile.buildCommand}.`,
-    `Memory: ${memory.map((item) => item.replace(/\s+/g, " ")).slice(0, 4).join(" ")}`
-  ].join("\n");
-}
-function readActiveScope(cwd) {
-  const state = readJsonSafe(path3.join(cwd, ".agentkick", "workflow-state.json"));
-  if (state?.activeScope && state.activeScope !== "none") return state.activeScope;
-  const currentTask = readFileSafe(path3.join(cwd, "CURRENT_TASK.md"));
-  const match = currentTask.match(/Task scope:\s*(.+)/i);
-  return match?.[1]?.trim() || null;
-}
-function existing(cwd, files) {
-  return files.filter((file2) => fs3.existsSync(path3.join(cwd, file2)));
-}
-function tokenize(value) {
-  const terms = value.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length >= 2 && !["the", "and", "for", "with", "task", "current"].includes(part));
-  const aliases = {
-    cli: ["command", "commands", "commander", "program"],
-    auth: ["login", "session", "user", "account"],
-    api: ["route", "routes", "server", "service"],
-    workflow: ["workflows", "state", "task"],
-    workflows: ["workflow", "state", "task"]
-  };
-  return [...new Set(terms.flatMap((term) => [term, ...aliases[term] ?? []]))];
-}
-function readFileSafe(file2) {
-  try {
-    return fs3.readFileSync(file2, "utf8");
-  } catch {
-    return "";
-  }
-}
-function lineCount(content) {
-  if (!content) return 0;
-  return content.split(/\r?\n/).length;
-}
-function compressText(content, maxLength) {
-  const compact = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" ").replace(/\s+/g, " ");
-  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 3)}...`;
-}
-function isAgentMemoryPath(relativePath) {
-  return MEMORY_FILES.includes(relativePath) || relativePath === ".agentkick.json" || relativePath.startsWith(".github/") || relativePath.startsWith(".claude/") || relativePath.startsWith(".codex/") || relativePath.startsWith(".agents/") || relativePath.startsWith(".cursor/");
-}
-function slash(value) {
-  return value.replace(/\\/g, "/");
 }
 
 // src/templates/agent-files.ts
@@ -1725,7 +1976,7 @@ function lineCount2(content) {
   if (!content) return 0;
   return content.split(/\r?\n/).length;
 }
-function directoryExists2(cwd, relativePath) {
+function directoryExists3(cwd, relativePath) {
   try {
     return fs5.statSync(path6.join(cwd, relativePath)).isDirectory();
   } catch {
@@ -2020,8 +2271,8 @@ function modularityFindings(cwd, sourceFiles) {
   const findings = [];
   const srcFiles = sourceFiles.filter((file2) => file2.relativePath.startsWith("src/"));
   const topLevelSrcFiles = srcFiles.filter((file2) => file2.relativePath.split("/").length <= 2);
-  const hasFeatureBoundary = directoryExists2(cwd, "src/features") || directoryExists2(cwd, "features") || directoryExists2(cwd, "src/commands") && directoryExists2(cwd, "src/core") && directoryExists2(cwd, "src/workflow");
-  const hasCoreBoundary = directoryExists2(cwd, "src/core") || directoryExists2(cwd, "core");
+  const hasFeatureBoundary = directoryExists3(cwd, "src/features") || directoryExists3(cwd, "features") || directoryExists3(cwd, "src/commands") && directoryExists3(cwd, "src/core") && directoryExists3(cwd, "src/workflow");
+  const hasCoreBoundary = directoryExists3(cwd, "src/core") || directoryExists3(cwd, "core");
   if (sourceFiles.length >= 25 && !hasFeatureBoundary) {
     findings.push(
       finding({
@@ -2300,8 +2551,8 @@ function auditRepo(cwd) {
     ...REQUIRED_AGENT_FILES.map(([file2, label]) => requiredFile(cwd, file2, label)),
     ...OPTIONAL_AGENT_FILES.map(([file2, label]) => optionalFile(cwd, file2, label))
   ];
-  const verificationCommand2 = commandFor(profile.testCommand, "test", packageInfo?.scripts?.test);
-  const buildCommand = commandFor(profile.buildCommand, "build", packageInfo?.scripts?.build);
+  const verificationCommand3 = commandFor(profile.testCommand, "test", packageInfo?.scripts?.test);
+  const buildCommand2 = commandFor(profile.buildCommand, "build", packageInfo?.scripts?.build);
   const analysis = analyzeWorkflow(cwd, packageInfo, config, workflowState);
   const findings = analysisFindings(cwd, packageInfo, config, workflowState, analysis);
   const failures = checks.filter((check) => !check.ok).map((check) => check.message);
@@ -2314,8 +2565,8 @@ function auditRepo(cwd) {
     status: statusValue,
     detectedStack: profile.primaryStack ?? profile.template,
     detectedCapabilities: profile.capabilities ?? [],
-    verificationCommand: verificationCommand2,
-    buildCommand,
+    verificationCommand: verificationCommand3,
+    buildCommand: buildCommand2,
     nextCommand: nextCommandFor(findings),
     findings,
     generatedVendorPaths: analysis.generatedVendorPaths,
@@ -2332,9 +2583,9 @@ function analyzeWorkflow(cwd, packageInfo, config, workflowState) {
   const files = scanRepoFiles(cwd);
   const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
   const reactFiles = sourceFiles.filter((file2) => file2.isReact);
-  const generatedVendorPaths = GENERATED_VENDOR_CANDIDATES.filter((candidate) => directoryExists2(cwd, candidate));
+  const generatedVendorPaths = GENERATED_VENDOR_CANDIDATES.filter((candidate) => directoryExists3(cwd, candidate));
   const missingMemoryFiles = WORKFLOW_MEMORY_FILES.filter(
-    (file2) => !directoryExists2(cwd, file2) && !pathExists(cwd, file2)
+    (file2) => !directoryExists3(cwd, file2) && !pathExists(cwd, file2)
   );
   const preliminary = [
     ...memoryFindings(cwd, missingMemoryFiles, workflowState),
@@ -2394,17 +2645,30 @@ Examples:
 
 // src/commands/focus.ts
 function registerFocusCommand(program, context) {
-  program.command("focus").description("Generate scoped task context and update workflow state.").argument("[scope]", "optional feature, folder, or task scope").addHelpText(
+  program.command("focus").description("Generate scoped task context and update workflow state.").argument("[scope]", "optional feature, folder, or task scope").option("--files <paths...>", "explicit task files or folders to use as scope").option("--feature <name>", "feature name to focus").option("--task <task>", "task description to turn into an agent brief").addHelpText(
     "after",
     `
 
 Examples:
   $ agentkick focus auth
+  $ agentkick focus --feature billing
+  $ agentkick focus --task "Improve README positioning"
+  $ agentkick focus --files README.md package.json
   $ agentkick focus checkout
   $ agentkick focus "fix popup button"
 `
-  ).action((scope) => {
-    console.log(renderFocus(buildFocusContext(context.cwd, scope)));
+  ).action((scope, options) => {
+    applyWriteMode(program, options);
+    console.log(
+      renderFocus(
+        buildFocusContext(context.cwd, {
+          scope,
+          files: options.files,
+          feature: options.feature,
+          task: options.task
+        })
+      )
+    );
   });
 }
 
@@ -4217,7 +4481,7 @@ function buildChunks(profile, task, areas, files) {
     nonGoals: ["Do not add new behavior while verifying.", "Do not hide failing checks."],
     dependencies: chunks.map((chunk) => chunk.id),
     suggestedFiles: [],
-    verification: verificationCommand(profile),
+    verification: verificationCommand2(profile),
     agentPrompt: promptFor("Run verification, summarize changed files, blockers, and follow-up.", task, files),
     doFirst: false,
     parallelizable: false
@@ -4239,9 +4503,9 @@ function verificationFor(profile, area) {
   if (area.id === "extension" && profile.stack.includes("chrome-extension")) return profile.buildCommand;
   if (area.id === "desktop" && (profile.stack.includes("electron") || profile.stack.includes("tauri")))
     return profile.buildCommand;
-  return verificationCommand(profile);
+  return verificationCommand2(profile);
 }
-function verificationCommand(profile) {
+function verificationCommand2(profile) {
   if (profile.testCommand && !profile.testCommand.startsWith("document ")) return profile.testCommand;
   if (profile.buildCommand && !profile.buildCommand.startsWith("document ")) return profile.buildCommand;
   return "document the narrowest useful verification command before editing";
@@ -4311,16 +4575,28 @@ function renderChunk(chunk, index) {
 
 // src/commands/summarize.ts
 function registerSummarizeCommand(program, context) {
-  program.command("summarize").description("Compress workflow state for handoff or a fresh chat.").argument("[scope]", "optional feature, folder, or task scope").addHelpText(
+  program.command("summarize").description("Compress workflow state for handoff or a fresh chat.").argument("[scope]", "optional feature, folder, or task scope").option("--task <task>", "task description to record in memory").option("--status <status>", "summary status: complete, blocked, or handoff").option("--handoff", "produce a short paste-ready handoff for a fresh chat").addHelpText(
     "after",
     `
 
 Examples:
   $ agentkick summarize
+  $ agentkick summarize --task "Improve README positioning"
+  $ agentkick summarize --task "Improve README positioning" --handoff
   $ agentkick summarize auth
 `
-  ).action(async (scope) => {
-    console.log(renderSummary(await buildWorkflowSummary(context.cwd, scope)));
+  ).action(async (scope, options) => {
+    applyWriteMode(program, options);
+    console.log(
+      renderSummary(
+        await buildWorkflowSummary(context.cwd, {
+          scope,
+          task: options.task,
+          handoff: options.handoff,
+          status: options.status
+        })
+      )
+    );
   });
 }
 

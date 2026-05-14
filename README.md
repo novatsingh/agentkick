@@ -131,11 +131,26 @@ Creates scoped task context and updates `CURRENT_TASK.md` plus `.agentkick/workf
 
 ```bash
 agentkick focus auth
+agentkick focus --feature billing
+agentkick focus --task "Improve README positioning"
+agentkick focus --files README.md package.json
 agentkick focus checkout
 agentkick focus "fix popup button"
 ```
 
-Focus output tells the next coding agent what to read first, which files are likely relevant, and which boundaries to respect.
+Focus output is a paste-ready task brief for Codex, Claude Code, Cursor, Copilot, Windsurf, or MCP-based workflows. It tells the next coding agent the task, files to read first, task files, avoid paths, memory files, verification command, boundaries, uncertainty, and the next AgentKick command.
+
+Before Codex:
+
+```bash
+agentkick focus --task "Improve README positioning"
+```
+
+Or, when you already know the scope:
+
+```bash
+agentkick focus --files README.md package.json
+```
 
 ### `agentkick split-task`
 
@@ -174,10 +189,18 @@ Compresses current workflow state into a fresh-chat handoff summary.
 
 ```bash
 agentkick summarize
+agentkick summarize --task "Improve README positioning"
+agentkick summarize --task "Improve README positioning" --handoff
 agentkick summarize auth
 ```
 
-Use this before resetting a long AI chat or handing work to another coding agent.
+Use this after Codex or another coding agent finishes a pass. It appends a compact task entry to `TASK_HISTORY.md` and can print a short fresh-chat handoff.
+
+After Codex:
+
+```bash
+agentkick summarize --task "Improve README positioning" --handoff
+```
 
 ## Before And After
 

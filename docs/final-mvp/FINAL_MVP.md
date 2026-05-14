@@ -70,10 +70,15 @@ agentkick doctor --strict
 agentkick doctor --json
 agentkick doctor --debug
 agentkick focus <scope>
+agentkick focus --feature <name>
+agentkick focus --task "<task>"
+agentkick focus --files <paths...>
 agentkick split-task "<task>"
 agentkick split-task "<task>" --files <paths...>
 agentkick split-task "<task>" --json
 agentkick summarize <scope>
+agentkick summarize --task "<task>"
+agentkick summarize --task "<task>" --handoff
 ```
 
 ## Secondary Commands

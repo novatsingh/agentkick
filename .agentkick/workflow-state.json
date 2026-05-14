@@ -1,11 +1,15 @@
 {
   "schemaVersion": 1,
   "project": "agentkick",
-  "activeScope": "none",
-  "updatedAt": "2026-05-13T10:27:26.113Z",
+  "activeScope": "explicit file scope",
+  "task": "explicit file scope",
+  "updatedAt": "2026-05-14T12:36:58.167Z",
   "stack": [
     "nodejs",
     "node-cli"
   ],
-  "scopedFiles": []
+  "scopedFiles": [
+    "README.md",
+    "package.json"
+  ]
 }

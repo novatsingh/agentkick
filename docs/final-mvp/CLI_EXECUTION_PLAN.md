@@ -149,6 +149,9 @@ Inputs:
 agentkick focus popup
 agentkick focus checkout
 agentkick focus "Fix popup CTA"
+agentkick focus --feature billing
+agentkick focus --task "Improve README positioning"
+agentkick focus --files README.md package.json
 ```
 
 Behavior:
@@ -158,12 +161,19 @@ Behavior:
 - load current root-level workflow memory
 - apply avoid paths
 - infer likely scoped files from the provided scope text
+- prefer explicit `--files` scope as the source of truth
+- print a paste-ready task brief for Codex and other coding agents
 - show uncertainty when scope is incomplete
+- warn when scope is too broad
+- never copy full source file contents
 
 Output:
 
 ```text
 AgentKick Focus
+
+Task
+  Improve README positioning
 
 Read first
   AGENTS.md
@@ -178,6 +188,12 @@ Avoid
   dist/
   release/
   node_modules/
+
+Verification
+  npm test
+
+Uncertainty
+  Explicit --files scope is being used as the source of truth.
 
 Agent prompt
   Work only in the task files unless investigation proves another file is required.
@@ -204,6 +220,8 @@ Inputs:
 ```bash
 agentkick summarize
 agentkick summarize popup
+agentkick summarize --task "Improve README positioning"
+agentkick summarize --task "Improve README positioning" --handoff
 ```
 
 Behavior:
@@ -212,6 +230,8 @@ Behavior:
 - read active scope from `.agentkick/workflow-state.json` or `CURRENT_TASK.md`
 - detect likely scoped files from the selected scope
 - print a compact fresh-chat summary
+- append a compact entry to `TASK_HISTORY.md`
+- include status, result, changed files, verification state, blocker, and next step
 - avoid raw logs
 
 Output:
@@ -221,9 +241,17 @@ AgentKick Summary
 
 Entry
   Project: browser-helper
+  Task: Fix popup CTA
+  Status: handoff
   Scope: popup
   Files: src/popup/index.html, src/popup/index.js
   Verification: npm test
+
+Fresh-chat handoff
+  Task: Fix popup CTA
+  Status: handoff
+  Changed files: src/popup/index.html, src/popup/index.js
+  Next: continue from the compact handoff
 
 Next
   paste summary into the next agent session

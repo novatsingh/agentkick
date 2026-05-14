@@ -2,17 +2,25 @@
 
 ## Status
 
-No active task.
+Prepared focus context.
 
 ## Active Scope
 
+- Task: explicit file scope
+- Task scope: explicit file scope
+- Scope source: explicit files
 - Project: agentkick
 - Stack: nodejs, node-cli
 - Verification: npm test
 
 ## Scoped Files
 
-- None yet.
+- README.md: explicit file scope
+- package.json: explicit file scope
+
+## Uncertainty
+
+- Explicit --files scope is being used as the source of truth.
 
 ## Execution Boundary
 
