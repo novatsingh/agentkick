@@ -510,11 +510,6 @@ function score(value) {
   if (value >= 65) return chalk2.yellow(`${value}/100`);
   return chalk2.red(`${value}/100`);
 }
-function severity(value) {
-  if (value === "high") return chalk2.red(value);
-  if (value === "medium") return chalk2.yellow(value);
-  return chalk2.gray(value);
-}
 function checkStatus(ok) {
   return ok ? chalk2.green("PASS") : chalk2.red("FAIL");
 }
@@ -1607,16 +1602,14 @@ function isPack2(value) {
 import fs4 from "fs";
 import path5 from "path";
 var REQUIRED_AGENT_FILES = [
-  ["AGENTS.md", "master repo intelligence"],
+  ["AGENTS.md", "agent operating rules"],
+  ["WORKFLOW_RULES.md", "workflow rules"],
+  [".agentkick.json", "AgentKick config"]
+];
+var OPTIONAL_AGENT_FILES = [
   ["CLAUDE.md", "Claude memory"],
   [".github/copilot-instructions.md", "Copilot root instructions"],
-  [".github/instructions/security.instructions.md", "Copilot security instructions"],
-  [".claude/skills/review/SKILL.md", "Claude review skill"],
-  [".claude/skills/security-scan/SKILL.md", "Claude security skill"],
-  [".agents/skills/review/SKILL.md", "generic review skill"],
-  [".codex/agents/reviewer.md", "Codex reviewer agent"],
-  [".cursor/rules/agentkick.mdc", "Cursor rules"],
-  [".agentkick.json", "AgentKick config"]
+  [".cursor/rules/agentkick.mdc", "Cursor rules"]
 ];
 var WORKFLOW_MEMORY_FILES = [
   "AGENTS.md",
@@ -1642,7 +1635,7 @@ var SOURCE_EXTENSIONS2 = /* @__PURE__ */ new Set([
   ".rs",
   ".php"
 ]);
-var IGNORED_DIRS2 = /* @__PURE__ */ new Set([
+var SCAN_IGNORED_DIRS = /* @__PURE__ */ new Set([
   ".git",
   ".next",
   ".turbo",
@@ -1658,74 +1651,111 @@ var IGNORED_DIRS2 = /* @__PURE__ */ new Set([
   "target",
   "__pycache__"
 ]);
+var GENERATED_VENDOR_CANDIDATES = [
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".next",
+  ".turbo",
+  "target",
+  "vendor",
+  "release",
+  "storybook-static",
+  "public/generated",
+  "docs/generated"
+];
 function runDoctor(cwd, options = {}) {
   const audit = auditRepo(cwd);
   if (options.json) {
-    console.log(JSON.stringify(audit, null, 2));
+    console.log(JSON.stringify(jsonAudit(audit), null, 2));
   } else {
     printAudit(audit, options);
   }
-  if (options.strict && (audit.failures.length > 0 || audit.score < 85)) {
+  if (options.strict && (audit.findings.some((finding2) => finding2.priority === "P0") || audit.score < 85)) {
     process.exitCode = 1;
   }
 }
 function auditRepo(cwd) {
   const packageInfo = readJsonSafe(path5.join(cwd, "package.json"));
   const config = readJsonSafe(path5.join(cwd, ".agentkick.json"));
+  const workflowState = readJsonSafe(path5.join(cwd, ".agentkick", "workflow-state.json"));
   const profile = detectProject(cwd);
-  const checks = REQUIRED_AGENT_FILES.map(([file2, label]) => requiredFile(cwd, file2, label));
-  const analysis = analyzeWorkflow(cwd, packageInfo, config);
-  const warningProblems = analysis.problems.filter((problem) => problem.severity !== "high");
-  const highProblems = analysis.problems.filter((problem) => problem.severity === "high");
-  const warnings = warningProblems.map(problemMessage);
+  const checks = [
+    ...REQUIRED_AGENT_FILES.map(([file2, label]) => requiredFile(cwd, file2, label)),
+    ...OPTIONAL_AGENT_FILES.map(([file2, label]) => optionalFile(cwd, file2, label))
+  ];
+  const verificationCommand2 = commandFor(profile.testCommand, "test", packageInfo?.scripts?.test);
+  const buildCommand = commandFor(profile.buildCommand, "build", packageInfo?.scripts?.build);
+  const analysis = analyzeWorkflow(cwd, packageInfo, config, workflowState);
+  const findings = analysisFindings(cwd, packageInfo, config, workflowState, analysis);
   const failures = checks.filter((check) => !check.ok).map((check) => check.message);
-  const score2 = readinessScore(failures, analysis.problems);
+  const scoreValue = readinessScore(findings);
+  const statusValue = statusFor(scoreValue, findings);
   return {
-    score: score2,
-    status: failures.length === 0 && score2 >= 85 ? "ready" : failures.length > 0 ? "blocked" : "needs-review",
+    schemaVersion: 1,
+    command: "doctor",
+    score: scoreValue,
+    status: statusValue,
     detectedStack: profile.primaryStack ?? profile.template,
     detectedCapabilities: profile.capabilities ?? [],
-    detectionDebug: profile.detection ?? {
-      cwd,
-      primaryStack: profile.primaryStack ?? profile.template,
-      capabilities: profile.capabilities ?? [],
-      detected: profile.stack,
-      workspaceHints: [],
-      filesChecked: [],
-      dependencies: [],
-      configFiles: [],
-      reasoning: []
-    },
+    verificationCommand: verificationCommand2,
+    buildCommand,
+    nextCommand: nextCommandFor(findings),
+    findings,
+    generatedVendorPaths: analysis.generatedVendorPaths,
+    missingMemoryFiles: analysis.missingMemoryFiles,
     checks,
-    problems: analysis.problems,
-    warnings: [...warnings, ...highProblems.map(problemMessage)],
-    failures,
-    suggestions: suggestionsFor(failures, analysis.problems),
+    warnings: findings.filter((finding2) => finding2.priority !== "P0").map(findingMessage),
+    failures: [...failures, ...findings.filter((finding2) => finding2.priority === "P0").map(findingMessage)],
+    suggestions: suggestionsFor(findings),
+    detectionDebug: profile.detection ?? fallbackDetection(cwd, profile.primaryStack ?? profile.template, profile.stack),
     analysis
   };
 }
-function analyzeWorkflow(cwd, packageInfo, config) {
+function analyzeWorkflow(cwd, packageInfo, config, workflowState) {
   const files = scanRepoFiles(cwd);
   const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
   const reactFiles = sourceFiles.filter((file2) => file2.isReact);
-  const problems = [
-    ...memoryProblems(cwd),
-    ...commandProblems(packageInfo, config),
-    ...fileSizeProblems(sourceFiles),
-    ...reactComponentProblems(reactFiles),
-    ...modularityProblems(cwd, sourceFiles),
-    ...tokenWasteProblems(cwd, files),
-    ...taskIsolationProblems(cwd),
-    ...mcpProblems(cwd),
-    ...ciProblems(cwd)
+  const generatedVendorPaths = GENERATED_VENDOR_CANDIDATES.filter((candidate) => directoryExists2(cwd, candidate));
+  const missingMemoryFiles = WORKFLOW_MEMORY_FILES.filter((file2) => !fs4.existsSync(path5.join(cwd, file2)));
+  const preliminary = [
+    ...memoryFindings(cwd, missingMemoryFiles, workflowState),
+    ...verificationFindings(packageInfo, config),
+    ...generatedVendorFindings(cwd, generatedVendorPaths),
+    ...sourceFileFindings(sourceFiles),
+    ...reactFindings(reactFiles),
+    ...modularityFindings(cwd, sourceFiles),
+    ...taskStateFindings(cwd, workflowState),
+    ...ciFindings(cwd)
   ];
   return {
     filesScanned: files.length,
     sourceFiles: sourceFiles.length,
     reactFiles: reactFiles.length,
     largestFiles: [...sourceFiles].sort((a, b) => b.lines - a.lines || b.bytes - a.bytes).slice(0, 8),
-    problems
+    generatedVendorPaths,
+    missingMemoryFiles,
+    contextWasteZones: preliminary.filter(
+      (finding2) => ["context-waste", "token-waste", "file-size", "react-component"].includes(finding2.category)
+    )
   };
+}
+function analysisFindings(cwd, packageInfo, config, workflowState, analysis) {
+  const files = scanRepoFiles(cwd);
+  const sourceFiles = files.filter((file2) => SOURCE_EXTENSIONS2.has(file2.extension));
+  const reactFiles = sourceFiles.filter((file2) => file2.isReact);
+  return [
+    ...memoryFindings(cwd, analysis.missingMemoryFiles, workflowState),
+    ...verificationFindings(packageInfo, config),
+    ...generatedVendorFindings(cwd, analysis.generatedVendorPaths),
+    ...sourceFileFindings(sourceFiles),
+    ...reactFindings(reactFiles),
+    ...modularityFindings(cwd, sourceFiles),
+    ...taskStateFindings(cwd, workflowState),
+    ...ciFindings(cwd)
+  ].sort(compareFindings);
 }
 function scanRepoFiles(cwd) {
   const results = [];
@@ -1740,14 +1770,14 @@ function scanRepoFiles(cwd) {
       const fullPath = path5.join(dir, entry.name);
       const relativePath = slash2(path5.relative(cwd, fullPath));
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRS2.has(entry.name)) walk(fullPath);
+        if (!SCAN_IGNORED_DIRS.has(entry.name)) walk(fullPath);
         continue;
       }
       if (!entry.isFile()) continue;
       const extension = path5.extname(entry.name).toLowerCase();
       if (!SOURCE_EXTENSIONS2.has(extension) && !isMemoryFile(relativePath)) continue;
       const stats = fs4.statSync(fullPath);
-      if (stats.size > 6e5) continue;
+      if (stats.size > 7e5) continue;
       const content = readFileSafe2(fullPath);
       results.push({
         relativePath,
@@ -1762,240 +1792,329 @@ function scanRepoFiles(cwd) {
   walk(cwd);
   return results;
 }
-function memoryProblems(cwd) {
-  const problems = [];
-  for (const file2 of WORKFLOW_MEMORY_FILES) {
-    const fullPath = path5.join(cwd, file2);
-    if (!fs4.existsSync(fullPath)) {
-      problems.push({
-        severity: file2 === "AGENTS.md" ? "high" : "medium",
+function memoryFindings(cwd, missingFiles, workflowState) {
+  const findings = [];
+  if (!fs4.existsSync(path5.join(cwd, ".agentkick.json"))) {
+    findings.push(
+      finding({
+        id: "memory.missing-agentkick-config",
+        priority: "P0",
         category: "memory",
+        title: "Missing AgentKick config",
+        file: ".agentkick.json",
+        signal: ".agentkick.json was not found at the repo root.",
+        agentImpact: "Agents cannot share a stable project profile, verification command, or workflow metadata.",
+        recommendation: "Run agentkick init to create the repo readiness layer.",
+        autoFix: "safe-plan"
+      })
+    );
+  }
+  for (const file2 of missingFiles) {
+    findings.push(
+      finding({
+        id: `memory.missing.${slug(file2)}`,
+        priority: file2 === "AGENTS.md" || file2 === "WORKFLOW_RULES.md" || file2 === ".agentkick.json" ? "P0" : "P1",
+        category: file2 === "CURRENT_TASK.md" ? "continuity" : "memory",
         title: `Missing workflow memory: ${file2}`,
         file: file2,
-        detail: `${file2} is part of the durable repo memory layer agents should read before editing.`,
-        suggestion: "Run agentkick init or add the missing memory file with concise project rules."
-      });
-      continue;
-    }
+        signal: `${file2} was not found at the repo root.`,
+        agentImpact: file2 === "CURRENT_TASK.md" ? "Task continuity breaks after a chat reset because active scope has no durable home." : "Agents must infer repo rules from chat history or source files.",
+        recommendation: "Run agentkick init or add the missing file with concise agent-readable sections.",
+        autoFix: "safe-plan"
+      })
+    );
+  }
+  for (const file2 of WORKFLOW_MEMORY_FILES) {
+    const fullPath = path5.join(cwd, file2);
+    if (!fs4.existsSync(fullPath)) continue;
     const content = readFileSafe2(fullPath);
+    const lines = lineCount2(content);
     if (content.trim().length < 80) {
-      problems.push({
-        severity: "medium",
-        category: "memory",
-        title: `Thin workflow memory: ${file2}`,
-        file: file2,
-        detail: `${file2} exists but is too small to carry useful agent context.`,
-        suggestion: "Add purpose, boundaries, commands, and update rules in short markdown sections."
-      });
+      findings.push(
+        finding({
+          id: `memory.thin.${slug(file2)}`,
+          priority: "P2",
+          category: "memory",
+          title: `Thin workflow memory: ${file2}`,
+          file: file2,
+          signal: `${file2} has less than 80 characters of usable content.`,
+          agentImpact: "Agents get the file name but not enough rules, scope, or continuity to act reliably.",
+          recommendation: "Add purpose, boundaries, commands, update rules, and current risks in short sections.",
+          autoFix: "manual"
+        })
+      );
+    }
+    if (lines >= 350 || content.length >= 3e4) {
+      findings.push(
+        finding({
+          id: `memory.oversized.${slug(file2)}`,
+          priority: "P2",
+          category: "token-waste",
+          title: `Oversized workflow memory: ${file2}`,
+          file: file2,
+          signal: `${file2} has ${lines} lines and ${content.length} characters.`,
+          agentImpact: "Agents will waste context loading durable memory that should be compact.",
+          recommendation: "Compress old details into TASK_HISTORY.md or docs/ and keep startup memory concise.",
+          autoFix: "manual"
+        })
+      );
     }
   }
-  return problems;
+  if (!workflowState) {
+    findings.push(
+      finding({
+        id: "continuity.workflow-state-missing",
+        priority: "P1",
+        category: "continuity",
+        title: "Missing workflow state",
+        file: ".agentkick/workflow-state.json",
+        signal: ".agentkick/workflow-state.json was not found.",
+        agentImpact: "AgentKick cannot resume the active scope after a thread reset.",
+        recommendation: "Run agentkick init, then use agentkick focus <scope> before handing work to an agent.",
+        autoFix: "safe-plan"
+      })
+    );
+  }
+  return findings;
 }
-function commandProblems(packageInfo, config) {
-  const problems = [];
-  const hasTest = Boolean(
-    packageInfo?.scripts?.test || config?.testCommand && !config.testCommand.startsWith("document ")
-  );
-  const hasBuild = Boolean(
-    packageInfo?.scripts?.build || config?.buildCommand && !config.buildCommand.startsWith("document ")
-  );
+function verificationFindings(packageInfo, config) {
+  const findings = [];
+  const scripts = packageInfo?.scripts ?? {};
+  const configTest = config?.testCommand;
+  const configBuild = config?.buildCommand;
+  const hasTest = Boolean(scripts.test || configTest && !configTest.startsWith("document "));
+  const hasBuild = Boolean(scripts.build || configBuild && !configBuild.startsWith("document "));
   if (!hasTest) {
-    problems.push({
-      severity: "medium",
-      category: "commands",
-      title: "Missing test command",
-      detail: "Agents cannot reliably verify changes without a known test command.",
-      suggestion: "Add a package test script or document testCommand in .agentkick.json."
-    });
+    findings.push(
+      finding({
+        id: "workflow.missing-test-command",
+        priority: "P1",
+        category: "commands",
+        title: "Missing verification command",
+        signal: "No package test script or usable .agentkick.json testCommand was found.",
+        agentImpact: "Agents cannot prove a change worked without guessing how to verify it.",
+        recommendation: "Add a test script or document the narrowest useful testCommand in .agentkick.json.",
+        autoFix: "manual"
+      })
+    );
   }
   if (!hasBuild) {
-    problems.push({
-      severity: "medium",
-      category: "commands",
-      title: "Missing build command",
-      detail: "Agents may skip production verification when no build command is discoverable.",
-      suggestion: "Add a build script or document buildCommand in .agentkick.json."
-    });
+    findings.push(
+      finding({
+        id: "workflow.missing-build-command",
+        priority: "P2",
+        category: "commands",
+        title: "Missing build command",
+        signal: "No package build script or usable .agentkick.json buildCommand was found.",
+        agentImpact: "Agents may skip production verification and hand back changes that do not build.",
+        recommendation: "Add a build script or document buildCommand in .agentkick.json.",
+        autoFix: "manual"
+      })
+    );
   }
-  return problems;
+  if (configTest && !configTest.startsWith("document ") && configTest.includes("npm") && !scripts.test) {
+    findings.push(
+      finding({
+        id: "workflow.test-script-mismatch",
+        priority: "P1",
+        category: "commands",
+        title: "Package script mismatch",
+        signal: `.agentkick.json testCommand is "${configTest}" but package.json has no test script.`,
+        agentImpact: "Agents will run a documented command that fails before checking behavior.",
+        recommendation: "Add the missing package script or update .agentkick.json to the command that works.",
+        autoFix: "manual"
+      })
+    );
+  }
+  if (configBuild && !configBuild.startsWith("document ") && configBuild.includes("npm") && !scripts.build) {
+    findings.push(
+      finding({
+        id: "workflow.build-script-mismatch",
+        priority: "P2",
+        category: "commands",
+        title: "Build script mismatch",
+        signal: `.agentkick.json buildCommand is "${configBuild}" but package.json has no build script.`,
+        agentImpact: "Agents may report build verification that cannot actually run.",
+        recommendation: "Add the missing package script or update .agentkick.json buildCommand.",
+        autoFix: "manual"
+      })
+    );
+  }
+  return findings;
 }
-function fileSizeProblems(files) {
-  return files.filter((file2) => file2.lines >= 700 || file2.bytes >= 6e4).slice(0, 12).map((file2) => ({
-    severity: file2.lines >= 1200 || file2.bytes >= 12e4 ? "high" : "medium",
-    category: "file-size",
-    title: "Giant file",
-    file: file2.relativePath,
-    detail: `${file2.relativePath} has ${file2.lines} lines and is expensive for agents to load or edit safely.`,
-    suggestion: "Split stable helpers, UI sections, and business logic into feature-scoped modules."
-  }));
+function generatedVendorFindings(cwd, paths) {
+  if (paths.length === 0) return [];
+  const guidance = `${readFileSafe2(path5.join(cwd, "WORKFLOW_RULES.md"))}
+${readFileSafe2(path5.join(cwd, "AGENTS.md"))}`;
+  const lowerGuidance = guidance.toLowerCase();
+  return paths.filter((item) => !pathCoveredByGuidance(item, lowerGuidance)).slice(0, 8).map(
+    (item) => finding({
+      id: `context.generated-exposed.${slug(item)}`,
+      priority: ["node_modules", "dist", "build", "coverage"].includes(item) ? "P2" : "P3",
+      category: "context-waste",
+      title: "Generated/vendor path not excluded",
+      file: item,
+      signal: `${item}/ exists but is not named in AGENTS.md or WORKFLOW_RULES.md avoidance guidance.`,
+      agentImpact: "Agents may waste file-search context in generated, dependency, or build output.",
+      recommendation: `Add ${item}/ to workflow avoidance rules unless tasks should inspect it.`,
+      autoFix: "safe-plan"
+    })
+  );
 }
-function reactComponentProblems(files) {
-  const problems = [];
+function sourceFileFindings(files) {
+  return files.filter((file2) => file2.lines >= 700 || file2.bytes >= 6e4).slice(0, 12).map(
+    (file2) => finding({
+      id: `context.giant-file.${slug(file2.relativePath)}`,
+      priority: file2.lines >= 1200 || file2.bytes >= 12e4 ? "P1" : "P2",
+      category: "context-waste",
+      title: "Oversized source file",
+      file: file2.relativePath,
+      signal: `${file2.lines} lines, ${file2.bytes} bytes.`,
+      agentImpact: "Agents will load unrelated behavior to make a small scoped change.",
+      recommendation: "Split stable helpers, UI sections, and business logic into feature-scoped modules.",
+      autoFix: "manual"
+    })
+  );
+}
+function reactFindings(files) {
+  const findings = [];
   for (const file2 of files) {
     const content = readFileSafe2(file2.absolutePath);
     const hookCount = (content.match(/\buse[A-Z]\w*\(/g) ?? []).length;
     const jsxBlocks = (content.match(/return\s*\(/g) ?? []).length;
     if (file2.lines >= 320 || hookCount >= 9 || jsxBlocks >= 6) {
-      problems.push({
-        severity: file2.lines >= 600 || hookCount >= 14 ? "high" : "medium",
-        category: "react-component",
-        title: "Oversized React component",
-        file: file2.relativePath,
-        detail: `${file2.relativePath} has ${file2.lines} lines, ${hookCount} hook calls, and ${jsxBlocks} JSX return blocks.`,
-        suggestion: "Extract feature sections, hooks, data adapters, and presentational components."
-      });
+      findings.push(
+        finding({
+          id: `context.oversized-react.${slug(file2.relativePath)}`,
+          priority: file2.lines >= 600 || hookCount >= 14 ? "P1" : "P2",
+          category: "context-waste",
+          title: "Oversized React component",
+          file: file2.relativePath,
+          signal: `${file2.lines} lines, ${hookCount} hook calls, ${jsxBlocks} JSX return blocks.`,
+          agentImpact: "Small UI changes require loading unrelated state, effects, and view logic.",
+          recommendation: "Extract feature sections, hooks, data adapters, and presentational components.",
+          autoFix: "manual"
+        })
+      );
     }
   }
-  return problems.slice(0, 12);
+  return findings.slice(0, 12);
 }
-function modularityProblems(cwd, sourceFiles) {
-  const problems = [];
+function modularityFindings(cwd, sourceFiles) {
+  const findings = [];
   const srcFiles = sourceFiles.filter((file2) => file2.relativePath.startsWith("src/"));
-  const appFiles = sourceFiles.filter((file2) => file2.relativePath.startsWith("app/"));
   const topLevelSrcFiles = srcFiles.filter((file2) => file2.relativePath.split("/").length <= 2);
   const hasFeatureBoundary = directoryExists2(cwd, "src/features") || directoryExists2(cwd, "features") || directoryExists2(cwd, "src/commands") && directoryExists2(cwd, "src/core") && directoryExists2(cwd, "src/workflow");
   const hasCoreBoundary = directoryExists2(cwd, "src/core") || directoryExists2(cwd, "core");
   if (sourceFiles.length >= 25 && !hasFeatureBoundary) {
-    problems.push({
-      severity: "medium",
-      category: "modularity",
-      title: "Missing feature boundaries",
-      detail: "The repo has enough source files to need feature-scoped folders, but no feature boundary was found.",
-      suggestion: "Add src/features/<feature-name> folders with local README files for agent scoping."
-    });
+    findings.push(
+      finding({
+        id: "scope.missing-feature-boundaries",
+        priority: "P2",
+        category: "execution-scope",
+        title: "Missing feature boundaries",
+        signal: `${sourceFiles.length} source files were found without an obvious feature boundary.`,
+        agentImpact: "Execution scope is unclear; agents must infer ownership from file names.",
+        recommendation: "Add feature folders or document boundaries in ARCHITECTURE.md and FEATURE_SUMMARIES.md.",
+        autoFix: "manual"
+      })
+    );
   }
-  if ((srcFiles.length >= 18 || appFiles.length >= 18) && !hasCoreBoundary) {
-    problems.push({
-      severity: "low",
-      category: "modularity",
-      title: "No core boundary",
-      detail: "Shared behavior has no obvious home, which can lead to scattered helpers and duplicated logic.",
-      suggestion: "Create src/core for stable framework-neutral primitives used by multiple features."
-    });
+  if (srcFiles.length >= 18 && !hasCoreBoundary) {
+    findings.push(
+      finding({
+        id: "scope.missing-core-boundary",
+        priority: "P3",
+        category: "execution-scope",
+        title: "No core boundary",
+        signal: `${srcFiles.length} files live under src without a shared core folder.`,
+        agentImpact: "Reusable behavior can drift into scattered helpers and increase context needed for edits.",
+        recommendation: "Create src/core for stable framework-neutral primitives used by multiple features.",
+        autoFix: "manual"
+      })
+    );
   }
   if (topLevelSrcFiles.length >= 14) {
-    problems.push({
-      severity: "medium",
-      category: "structure",
-      title: "Flat source structure",
-      detail: `${topLevelSrcFiles.length} files sit directly under src, making task scope harder to isolate.`,
-      suggestion: "Group files by feature, surface, or workflow before adding more behavior."
-    });
+    findings.push(
+      finding({
+        id: "scope.flat-src",
+        priority: "P2",
+        category: "execution-scope",
+        title: "Flat source structure",
+        signal: `${topLevelSrcFiles.length} files sit directly under src/.`,
+        agentImpact: "Task boundaries are harder to isolate and focused prompts become less reliable.",
+        recommendation: "Group files by feature, surface, or workflow before adding more behavior.",
+        autoFix: "manual"
+      })
+    );
   }
-  return problems;
+  return findings;
 }
-function tokenWasteProblems(cwd, files) {
-  const problems = [];
-  const generatedFolders = ["coverage", "storybook-static", "public/assets", "public/generated", "docs/generated"];
-  for (const folder of generatedFolders) {
-    if (directoryExists2(cwd, folder)) {
-      problems.push({
-        severity: "low",
-        category: "token-waste",
-        title: "Generated or bulky assets in repo context",
-        file: folder,
-        detail: `${folder} exists and can pollute agent file searches if not excluded from task context.`,
-        suggestion: "Document that agents should avoid this folder unless the task is explicitly about generated assets."
-      });
-    }
-  }
-  const longMarkdown = files.filter((file2) => file2.extension === ".md" && file2.lines >= 400 && !file2.relativePath.startsWith("docs/")).slice(0, 5);
-  for (const file2 of longMarkdown) {
-    problems.push({
-      severity: "low",
-      category: "token-waste",
-      title: "Long root-context markdown",
-      file: file2.relativePath,
-      detail: `${file2.relativePath} has ${file2.lines} lines and may waste context during agent startup.`,
-      suggestion: "Move durable reference material into docs/ and keep startup memory concise."
-    });
-  }
-  return problems;
-}
-function taskIsolationProblems(cwd) {
-  const problems = [];
-  const hasCurrentTask = fs4.existsSync(path5.join(cwd, "CURRENT_TASK.md"));
-  const hasArchitecture = fs4.existsSync(path5.join(cwd, "ARCHITECTURE.md"));
-  const hasProjectMap = fs4.existsSync(path5.join(cwd, "docs", "PROJECT_MAP.md"));
-  if (hasCurrentTask) {
-    const currentTask = readFileSafe2(path5.join(cwd, "CURRENT_TASK.md"));
-    if (!/active scope|current task|status/i.test(currentTask)) {
-      problems.push({
-        severity: "low",
-        category: "task-isolation",
+function taskStateFindings(cwd, workflowState) {
+  const findings = [];
+  const currentTaskPath = path5.join(cwd, "CURRENT_TASK.md");
+  if (!fs4.existsSync(currentTaskPath)) return findings;
+  const currentTask = readFileSafe2(currentTaskPath);
+  if (!/active scope|current task|status/i.test(currentTask)) {
+    findings.push(
+      finding({
+        id: "continuity.weak-current-task",
+        priority: "P2",
+        category: "continuity",
         title: "Weak active task file",
         file: "CURRENT_TASK.md",
-        detail: "CURRENT_TASK.md exists but does not clearly describe active scope or status.",
-        suggestion: "Keep CURRENT_TASK.md focused on status, active scope, touched files, and verification."
-      });
+        signal: "CURRENT_TASK.md does not clearly describe status or active scope.",
+        agentImpact: "Workflow cannot be resumed cleanly after a thread reset.",
+        recommendation: "Keep CURRENT_TASK.md focused on status, active scope, touched files, and verification.",
+        autoFix: "safe-plan"
+      })
+    );
+  }
+  if (workflowState?.updatedAt && workflowState.activeScope && workflowState.activeScope !== "none") {
+    const ageMs = Date.now() - new Date(workflowState.updatedAt).getTime();
+    const days = ageMs / 864e5;
+    if (Number.isFinite(days) && days >= 14) {
+      findings.push(
+        finding({
+          id: "continuity.stale-workflow-state",
+          priority: "P2",
+          category: "continuity",
+          title: "Stale workflow state",
+          file: ".agentkick/workflow-state.json",
+          signal: `Active scope "${workflowState.activeScope}" was last updated ${Math.floor(days)} days ago.`,
+          agentImpact: "Agents may resume old context and work from a stale execution boundary.",
+          recommendation: "Run agentkick summarize, clear the active task, or run agentkick focus <scope> for current work.",
+          autoFix: "manual"
+        })
+      );
     }
-  } else {
-    problems.push({
-      severity: "medium",
-      category: "task-isolation",
-      title: "No active task file",
-      file: "CURRENT_TASK.md",
-      detail: "Agents have no durable place to preserve the current task scope across chat resets.",
-      suggestion: "Add CURRENT_TASK.md and keep it focused on the active execution boundary."
-    });
   }
-  if (!hasProjectMap && !hasArchitecture) {
-    problems.push({
-      severity: "medium",
-      category: "task-isolation",
-      title: "No project map",
-      detail: "Agents must infer repo ownership from file names instead of a clear architecture map.",
-      suggestion: "Add ARCHITECTURE.md or docs/PROJECT_MAP.md with the first files and boundaries to read."
-    });
-  }
-  return problems;
+  return findings;
 }
-function mcpProblems(cwd) {
-  const problems = [];
-  for (const fileName of [".mcp.json", "mcp.json"]) {
-    const fullPath = path5.join(cwd, fileName);
-    if (!fs4.existsSync(fullPath)) continue;
-    const content = readFileSafe2(fullPath);
-    if (content.includes("C:\\\\") || content.includes("/") && content.includes("filesystem")) {
-      problems.push({
-        severity: "medium",
-        category: "security",
-        title: "Broad MCP filesystem access",
-        file: fileName,
-        detail: `${fileName} appears to expose broad filesystem access.`,
-        suggestion: "Restrict MCP filesystem tools to this repository and use explicit allowlists."
-      });
-    }
-    if (content.includes("*") && content.includes("command")) {
-      problems.push({
-        severity: "high",
-        category: "security",
-        title: "Wildcard MCP command access",
-        file: fileName,
-        detail: `${fileName} may allow broad command execution.`,
-        suggestion: "Replace wildcard command access with narrow command prefixes."
-      });
-    }
-  }
-  return problems;
-}
-function ciProblems(cwd) {
-  const workflowDir = path5.join(cwd, ".github", "workflows");
-  if (fs4.existsSync(workflowDir)) return [];
+function ciFindings(cwd) {
+  if (fs4.existsSync(path5.join(cwd, ".github", "workflows"))) return [];
   return [
-    {
-      severity: "low",
+    finding({
+      id: "workflow.no-ci",
+      priority: "P3",
       category: "ci",
-      title: "No GitHub Actions workflow",
-      detail: "Agents can still work, but there is no repo-native CI signal for handoff confidence.",
-      suggestion: "Add a minimal CI workflow or run agentkick add github."
-    }
+      title: "No repo-native CI signal",
+      signal: ".github/workflows was not found.",
+      agentImpact: "Agents can still work, but handoff confidence depends on local commands only.",
+      recommendation: "Add a minimal CI workflow or run agentkick add github.",
+      autoFix: "safe-plan"
+    })
   ];
 }
-function readinessScore(failures, problems) {
-  const weights = { high: 12, medium: 7, low: 3 };
-  const problemPenalty = problems.reduce((total, problem) => total + weights[problem.severity], 0);
-  return Math.max(0, Math.min(100, 100 - failures.length * 9 - problemPenalty));
+function readinessScore(findings) {
+  const weights = { P0: 22, P1: 12, P2: 6, P3: 2 };
+  const penalty = findings.reduce((total, finding2) => total + weights[finding2.priority], 0);
+  return Math.max(0, Math.min(100, 100 - penalty));
+}
+function statusFor(scoreValue, findings) {
+  if (findings.some((finding2) => finding2.priority === "P0")) return "blocked";
+  if (scoreValue >= 85) return "ready";
+  return "needs-review";
 }
 function printAudit(audit, options) {
   console.log(header("AgentKick doctor", "AI workflow readiness for this repository."));
@@ -2003,6 +2122,8 @@ function printAudit(audit, options) {
   console.log(`AI Readiness Score: ${score(audit.score)}`);
   console.log(`Status: ${status(audit.status)}`);
   if (options.strict) console.log("Mode: strict");
+  console.log(keyValue("Verification", audit.verificationCommand));
+  console.log(keyValue("Build", audit.buildCommand));
   console.log("");
   console.log(section("Detected stack:"));
   if (audit.detectedStack === "generic") {
@@ -2013,14 +2134,13 @@ function printAudit(audit, options) {
     for (const item of [audit.detectedStack, ...audit.detectedCapabilities]) console.log(bullet(item));
   }
   console.log("");
-  if (audit.problems.length > 0) {
-    console.log(section("Problems:"));
-    for (const problem of audit.problems) {
-      const file2 = problem.file ? ` (${problem.file})` : "";
-      console.log(bullet(`[${severity(problem.severity)}] ${problem.title}${file2}`));
-    }
-    console.log("");
-  }
+  printFindingBlock("Top 3 risks:", audit.findings.slice(0, 3));
+  printFindingBlock("Top context waste zones:", audit.analysis.contextWasteZones.slice(0, 5));
+  printMissingMemory(audit);
+  console.log(section("Generated/vendor paths detected:"));
+  if (audit.generatedVendorPaths.length === 0) console.log(bullet("none"));
+  for (const item of audit.generatedVendorPaths) console.log(bullet(pathLabel(item)));
+  console.log("");
   console.log(section("Workflow checks:"));
   for (const check of audit.checks) {
     console.log(`${checkStatus(check.ok)} ${check.label}: ${check.message}`);
@@ -2028,12 +2148,40 @@ function printAudit(audit, options) {
   if (audit.suggestions.length > 0) {
     console.log("");
     console.log(section("Suggested fixes:"));
-    for (const suggestion of audit.suggestions) console.log(bullet(suggestion));
+    for (const suggestion of audit.suggestions.slice(0, 6)) console.log(bullet(suggestion));
   }
+  console.log("");
+  console.log(keyValue("Next", command(audit.nextCommand)));
   if (options.debug) {
     printDetectionDebug(audit.detectionDebug);
     printWorkflowDebug(audit.analysis);
   }
+}
+function printFindingBlock(title, findings) {
+  console.log(section(title));
+  if (findings.length === 0) {
+    console.log(bullet("none"));
+    console.log("");
+    return;
+  }
+  for (const finding2 of findings) {
+    const file2 = finding2.file && !finding2.title.includes(finding2.file) ? ` ${pathLabel(finding2.file)}` : "";
+    console.log(bullet(`${finding2.priority} ${finding2.category}: ${finding2.title}${file2}`));
+    console.log(`  ${keyValue("Signal", finding2.signal)}`);
+    console.log(`  ${keyValue("Agent impact", finding2.agentImpact)}`);
+    console.log(`  ${keyValue("Fix", finding2.recommendation)}`);
+  }
+  console.log("");
+}
+function printMissingMemory(audit) {
+  console.log(section("Missing memory/workflow files:"));
+  if (audit.missingMemoryFiles.length === 0) {
+    console.log(bullet("none"));
+    console.log("");
+    return;
+  }
+  for (const item of audit.missingMemoryFiles) console.log(bullet(item));
+  console.log("");
 }
 function requiredFile(cwd, relativePath, label) {
   const fullPath = path5.join(cwd, relativePath);
@@ -2042,19 +2190,71 @@ function requiredFile(cwd, relativePath, label) {
   if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
   return { ok: true, label, message: relativePath };
 }
-function suggestionsFor(failures, problems) {
-  const suggestions = [];
-  if (failures.some((item) => item.includes("AGENTS.md")))
-    suggestions.push("Run agentkick init to regenerate the master repo intelligence layer.");
-  if (failures.some((item) => item.includes(".claude/skills")))
-    suggestions.push("Regenerate Claude skills with agentkick init.");
-  if (failures.some((item) => item.includes(".codex/agents")))
-    suggestions.push("Regenerate Codex specialist agents with agentkick init.");
-  for (const problem of problems) suggestions.push(problem.suggestion);
-  return [...new Set(suggestions)].slice(0, 10);
+function optionalFile(cwd, relativePath, label) {
+  const fullPath = path5.join(cwd, relativePath);
+  if (!fs4.existsSync(fullPath)) return { ok: true, label, message: `optional: ${relativePath} not present` };
+  const content = fs4.readFileSync(fullPath, "utf8");
+  if (content.trim().length < 40) return { ok: false, label, message: `${relativePath} looks too small` };
+  return { ok: true, label, message: relativePath };
 }
-function problemMessage(problem) {
-  return `${problem.title}${problem.file ? ` (${problem.file})` : ""}: ${problem.detail}`;
+function suggestionsFor(findings) {
+  return [...new Set(findings.map((finding2) => finding2.recommendation))].slice(0, 10);
+}
+function findingMessage(finding2) {
+  return `${finding2.priority} ${finding2.title}${finding2.file ? ` (${finding2.file})` : ""}: ${finding2.signal}`;
+}
+function nextCommandFor(findings) {
+  if (findings.some(
+    (finding2) => finding2.priority === "P0" && (finding2.category === "memory" || finding2.category === "continuity")
+  )) {
+    return "agentkick init --dry-run";
+  }
+  if (findings.some((finding2) => finding2.category === "context-waste")) return "agentkick split-task <task>";
+  return "agentkick focus <scope>";
+}
+function pathCoveredByGuidance(item, guidance) {
+  const lower = item.toLowerCase();
+  if (guidance.includes(lower)) return true;
+  if (["dist", "build", "out", ".next", ".turbo", "coverage", "release"].includes(lower)) {
+    return guidance.includes("generated") || guidance.includes("build");
+  }
+  if (["node_modules", "vendor", "target"].includes(lower)) {
+    return guidance.includes("vendor") || guidance.includes("dependency");
+  }
+  return false;
+}
+function commandFor(profileCommand, scriptName, packageScript) {
+  if (profileCommand && !profileCommand.startsWith("document ")) return profileCommand;
+  if (packageScript) return scriptName === "test" ? "npm test" : "npm run build";
+  return "not detected";
+}
+function jsonAudit(audit) {
+  return {
+    schemaVersion: audit.schemaVersion,
+    command: audit.command,
+    score: audit.score,
+    status: audit.status,
+    detectedStack: {
+      primary: audit.detectedStack,
+      capabilities: audit.detectedCapabilities
+    },
+    verificationCommand: audit.verificationCommand,
+    buildCommand: audit.buildCommand,
+    nextCommand: audit.nextCommand,
+    findings: audit.findings,
+    generatedVendorPaths: audit.generatedVendorPaths,
+    missingMemoryFiles: audit.missingMemoryFiles,
+    checks: audit.checks,
+    warnings: audit.warnings,
+    failures: audit.failures
+  };
+}
+function finding(input2) {
+  return input2;
+}
+function compareFindings(a, b) {
+  const order = { P0: 0, P1: 1, P2: 2, P3: 3 };
+  return order[a.priority] - order[b.priority] || a.category.localeCompare(b.category) || a.title.localeCompare(b.title);
 }
 function readFileSafe2(file2) {
   try {
@@ -2077,8 +2277,24 @@ function directoryExists2(cwd, relativePath) {
 function isMemoryFile(relativePath) {
   return relativePath.endsWith(".md") || relativePath === ".agentkick.json";
 }
+function slug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "root";
+}
 function slash2(value) {
   return value.replace(/\\/g, "/");
+}
+function fallbackDetection(cwd, stack, detected) {
+  return {
+    cwd,
+    primaryStack: stack,
+    capabilities: [],
+    detected,
+    workspaceHints: [],
+    filesChecked: [],
+    dependencies: [],
+    configFiles: [],
+    reasoning: []
+  };
 }
 function printDetectionDebug(detection) {
   console.log("");
@@ -3862,7 +4078,7 @@ function splitTask(cwd, profile, task, fileHints) {
     },
     files: normalizedFiles,
     subtasks: chunks,
-    nextCommand: nextCommandFor(chunks),
+    nextCommand: nextCommandFor2(chunks),
     warnings,
     boundaries: [
       "No autonomous scheduling.",
@@ -3968,7 +4184,7 @@ function warningsFor(task, files, areas) {
   if (task.trim().split(/\s+/).length < 3) warnings.push("Task text is short; subtask scopes are best-effort.");
   return warnings;
 }
-function nextCommandFor(chunks) {
+function nextCommandFor2(chunks) {
   const first = chunks.find((chunk) => chunk.doFirst) ?? chunks[0];
   if (!first) return "agentkick focus <scope>";
   return `agentkick focus ${quoteScope(first.id === "confirm-scope" ? "current task" : first.id)}`;

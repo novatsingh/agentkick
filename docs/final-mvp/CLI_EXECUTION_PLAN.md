@@ -96,6 +96,10 @@ Behavior:
 - detect memory presence
 - detect agent operating files
 - detect test/build commands
+- detect generated/vendor/build folders exposed to agent context
+- detect oversized memory files
+- detect stale current task state when timestamps are available
+- detect package script mismatches
 - detect giant files
 - produce one readiness score
 - produce top findings with agent impact
@@ -107,9 +111,9 @@ AgentKick Doctor
 
 AI readiness: 82/100 usable
 
-Fix now
-  P1 context risk  src/App.tsx is 1,240 lines; agents must load unrelated UI state.
-  P1 memory gap    API behavior exists but no API memory is declared.
+Top 3 risks
+  P1 context-waste  src/App.tsx has 1,240 lines; agents must load unrelated UI state.
+  P1 memory         WORKFLOW_RULES.md is missing; execution rules live only in chat.
 
 Strong
   AGENTS.md exists
@@ -117,7 +121,7 @@ Strong
   test command detected
 
 Next
-  agentkick focus <scope>
+  agentkick init --dry-run
 ```
 
 Strict mode:
@@ -130,6 +134,7 @@ Strict mode:
 JSON mode:
 
 - stable shape for CI and future integrations
+- includes score, findings, detected stack, verification command, next command, and generated/vendor paths
 - no dashboard dependency
 
 ## `agentkick focus`

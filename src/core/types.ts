@@ -47,12 +47,17 @@ export type DetectionDebug = {
   reasoning: string[];
 };
 
-export type DoctorProblemSeverity = "low" | "medium" | "high";
+export type DoctorPriority = "P0" | "P1" | "P2" | "P3";
+export type DoctorAutoFix = "none" | "manual" | "safe-plan";
 
 export type DoctorProblem = {
-  severity: DoctorProblemSeverity;
+  id: string;
+  priority: DoctorPriority;
   category:
     | "memory"
+    | "context-waste"
+    | "continuity"
+    | "execution-scope"
     | "modularity"
     | "file-size"
     | "react-component"
@@ -64,8 +69,10 @@ export type DoctorProblem = {
     | "ci";
   title: string;
   file?: string;
-  detail: string;
-  suggestion: string;
+  signal: string;
+  agentImpact: string;
+  recommendation: string;
+  autoFix: DoctorAutoFix;
 };
 
 export type WorkspaceHint = {

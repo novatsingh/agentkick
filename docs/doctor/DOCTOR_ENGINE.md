@@ -337,6 +337,22 @@ Each Doctor finding should be structured:
 }
 ```
 
+Current v1 findings use the same stable shape:
+
+```json
+{
+  "id": "memory.missing-workflow-rules-md",
+  "priority": "P0",
+  "category": "memory",
+  "title": "Missing workflow memory: WORKFLOW_RULES.md",
+  "file": "WORKFLOW_RULES.md",
+  "signal": "WORKFLOW_RULES.md was not found at the repo root.",
+  "agentImpact": "Agents must infer repo rules from chat history or source files.",
+  "recommendation": "Run agentkick init or add the missing file with concise agent-readable sections.",
+  "autoFix": "safe-plan"
+}
+```
+
 Priority levels:
 
 ```text
@@ -483,3 +499,117 @@ This workflow cannot be resumed.
 ```
 
 That is workflow intelligence for AI-native development.
+
+## v1 Output Examples
+
+### Bad Repo
+
+```text
+AgentKick doctor
+AI workflow readiness for this repository.
+
+AI Readiness Score: 42/100
+Status: blocked
+Verification: not detected
+Build: not detected
+
+Detected stack:
+- nextjs
+- react
+
+Top 3 risks:
+- P0 memory: Missing workflow memory: AGENTS.md
+  Signal: AGENTS.md was not found at the repo root.
+  Agent impact: Agents must infer repo rules from chat history or source files.
+  Fix: Run agentkick init or add the missing file with concise agent-readable sections.
+- P1 commands: Missing verification command
+  Signal: No package test script or usable .agentkick.json testCommand was found.
+  Agent impact: Agents cannot prove a change worked without guessing how to verify it.
+  Fix: Add a test script or document the narrowest useful testCommand in .agentkick.json.
+- P1 context-waste: Oversized source file src/App.tsx
+  Signal: 1280 lines, 144000 bytes.
+  Agent impact: Agents will load unrelated behavior to make a small scoped change.
+  Fix: Split stable helpers, UI sections, and business logic into feature-scoped modules.
+
+Top context waste zones:
+- P1 context-waste: Oversized source file src/App.tsx
+
+Missing memory/workflow files:
+- AGENTS.md
+- WORKFLOW_RULES.md
+- CURRENT_TASK.md
+
+Generated/vendor paths detected:
+- node_modules
+- dist
+
+Next: agentkick init --dry-run
+```
+
+### Good Repo
+
+```text
+AgentKick doctor
+AI workflow readiness for this repository.
+
+AI Readiness Score: 100/100
+Status: ready
+Verification: npm test
+Build: npm run build
+
+Detected stack:
+- nextjs
+- react
+- tailwind
+
+Top 3 risks:
+- none
+
+Top context waste zones:
+- none
+
+Missing memory/workflow files:
+- none
+
+Generated/vendor paths detected:
+- node_modules
+- .next
+
+Next: agentkick focus <scope>
+```
+
+### JSON Example
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "doctor",
+  "score": 78,
+  "status": "needs-review",
+  "detectedStack": {
+    "primary": "nextjs",
+    "capabilities": ["react", "tailwind"]
+  },
+  "verificationCommand": "npm test",
+  "buildCommand": "npm run build",
+  "nextCommand": "agentkick split-task <task>",
+  "findings": [
+    {
+      "id": "context.giant-file.src-app-tsx",
+      "priority": "P1",
+      "category": "context-waste",
+      "title": "Oversized source file",
+      "file": "src/App.tsx",
+      "signal": "1280 lines, 144000 bytes.",
+      "agentImpact": "Agents will load unrelated behavior to make a small scoped change.",
+      "recommendation": "Split stable helpers, UI sections, and business logic into feature-scoped modules.",
+      "autoFix": "manual"
+    }
+  ],
+  "generatedVendorPaths": ["node_modules", "dist"],
+  "missingMemoryFiles": [],
+  "checks": [],
+  "warnings": [],
+  "failures": []
+}
+```
